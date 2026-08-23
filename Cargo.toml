@@ -1,6 +1,6 @@
 [package]
 name = "lumen"
-version = "0.1.15"
+version = "0.2.0"
 edition = "2024"
 description = "A modern literature manager built with GPUI"
 repository = "https://github.com/LumenLib/Lumen"

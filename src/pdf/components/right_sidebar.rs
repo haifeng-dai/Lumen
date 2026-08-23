@@ -190,6 +190,23 @@ impl PdfReaderView {
                                     .child(div().w(px(140.0)).child(Select::new(&select_state)))
                                     .when(!original_for_copy.is_empty(), |this| {
                                         this.child(
+                                            Button::new("append-translation-toggle")
+                                                .ghost()
+                                                .icon(IconName::Plus)
+                                                .h(rems(1.5))
+                                                .w(rems(1.5))
+                                                .text_color(if self.append_translation_mode {
+                                                    theme.primary
+                                                } else {
+                                                    theme.muted_foreground
+                                                })
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.append_translation_mode =
+                                                        !this.append_translation_mode;
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .child(
                                             Button::new("copy-original")
                                                 .ghost()
                                                 .icon(IconName::Copy)

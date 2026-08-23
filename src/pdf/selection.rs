@@ -1041,15 +1041,33 @@ impl PdfReaderView {
                     && let Some(ref text) = self.selected_text
                     && !text.is_empty()
                 {
-                    if self.auto_translate {
-                        self.translate_text(text.clone(), false, cx);
+                    let is_appending = self.append_translation_mode;
+                    self.append_translation_mode = false;
+
+                    let final_text = if is_appending {
+                        let prev_original = self
+                            .translation_result
+                            .as_ref()
+                            .map(|r| r.original.clone())
+                            .unwrap_or_default();
+                        if prev_original.is_empty() {
+                            text.clone()
+                        } else {
+                            format!("{}{}", prev_original, text)
+                        }
+                    } else {
+                        text.clone()
+                    };
+
+                    if self.auto_translate || is_appending {
+                        self.translate_text(final_text, false, cx);
                     } else {
                         let prev_translated = self
                             .translation_result
                             .as_ref()
                             .and_then(|r| r.translated.clone());
                         self.translation_result = Some(TranslationResult {
-                            original: text.clone(),
+                            original: final_text,
                             translated: prev_translated,
                             is_loading: false,
                             error: None,

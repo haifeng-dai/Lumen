@@ -179,6 +179,7 @@ impl super::PdfReaderView {
             translation_original_expanded: initial_state.translation_original_expanded,
             translation_font_size: initial_state.translation_font_size,
             auto_translate: use_auto_translate,
+            append_translation_mode: false,
 
             preferred_left_sidebar_width: if use_left_sidebar_width > 0.0 {
                 use_left_sidebar_width
