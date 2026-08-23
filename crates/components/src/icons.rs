@@ -101,6 +101,7 @@ impl IconNamed for IconName {
             Self::MessageSquare => "icons/message_square.svg".into(),
             Self::Download => "icons/download.svg".into(),
             // Lumen 自有（下划线命名）
+            Self::FolderOpen => "icons/folder_open.svg".into(),
             Self::ChevronDown => "icons/chevron_down.svg".into(),
             Self::ChevronRight => "icons/chevron_right.svg".into(),
             Self::ChevronLeft => "icons/chevron_left.svg".into(),
@@ -112,7 +113,6 @@ impl IconNamed for IconName {
             Self::ZoomOut => "icons/minus.svg".into(),
             // gpui-component 图标（通过依赖加载）
             Self::File => "icons/file.svg".into(),
-            Self::FolderOpen => "icons/folder-open.svg".into(),
             Self::BookOpen => "icons/book-open.svg".into(),
             Self::Minimize => "icons/minimize.svg".into(),
             Self::Maximize => "icons/maximize.svg".into(),

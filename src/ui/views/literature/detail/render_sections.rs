@@ -3,7 +3,11 @@ use crate::ui::components::render_icon_button;
 use components::IconName;
 use gpui::prelude::*;
 use gpui::{ClickEvent, MouseButton, SharedString, Window, div, rems};
-use gpui_component::{Colorize, Icon, Theme, h_flex, input::InputState, v_flex};
+use gpui_component::{
+    Colorize, Icon, Theme, h_flex,
+    input::{InputState, TextareaState},
+    v_flex,
+};
 use i18n::{I18nKey, Language, t};
 use models::Literature;
 use models::theme::ResolvedSurface;
@@ -439,8 +443,7 @@ impl super::LiteratureDetailView {
                                         s.set_value(&et, window, cx);
                                     });
                                     this.edit_note_title = Some(entity);
-                                    let entity2 =
-                                        cx.new(|cx| InputState::new(window, cx).multi_line(true));
+                                    let entity2 = cx.new(|cx| TextareaState::new(window, cx));
                                     entity2.update(cx, |s, cx| {
                                         s.set_value(&ec, window, cx);
                                     });

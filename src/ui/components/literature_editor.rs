@@ -1,5 +1,5 @@
 use components::IconName;
-use components::{add_drag_behavior, labeled_input, muted_input_raw, selector};
+use components::{add_drag_behavior, labeled_input, muted_textarea_raw, selector};
 use gpui::prelude::*;
 use gpui::{AppContext, Entity, FontWeight, SharedString, Window, div, rems};
 #[cfg(not(windows))]
@@ -8,7 +8,7 @@ use gpui_component::{
     ActiveTheme, Icon,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState},
+    input::{InputState, Textarea, TextareaState},
     label::Label,
     scroll::ScrollableElement,
     v_flex,
@@ -44,8 +44,8 @@ pub struct LiteratureEditor {
     arxiv_id_input: Entity<InputState>,
     url_input: Entity<InputState>,
     publisher_input: Entity<InputState>,
-    abstract_input: Entity<InputState>,
-    notes_input: Entity<InputState>,
+    abstract_input: Entity<TextareaState>,
+    notes_input: Entity<TextareaState>,
     // 回调函数：当完成时调用 (Some(literature) 表示确认修改，None 表示取消)
     on_complete: LiteratureEditorCallback,
 }
@@ -68,13 +68,8 @@ impl LiteratureEditor {
         let lang = app.current_language();
 
         // 创建所有输入框并填充初始数据
-        let title_input = Self::create_input(
-            &literature.title,
-            t(I18nKey::Title, lang),
-            false,
-            window,
-            cx,
-        );
+        let title_input =
+            Self::create_input(&literature.title, t(I18nKey::Title, lang), window, cx);
 
         let authors_str = literature
             .authors
@@ -85,7 +80,6 @@ impl LiteratureEditor {
         let authors_input = Self::create_input(
             &authors_str,
             t(I18nKey::AuthorPlaceholder, lang),
-            false,
             window,
             cx,
         );
@@ -97,7 +91,6 @@ impl LiteratureEditor {
                 .map(|p| p.name.clone())
                 .unwrap_or_default(),
             t(I18nKey::JournalPlaceholder, lang),
-            false,
             window,
             cx,
         );
@@ -108,73 +101,55 @@ impl LiteratureEditor {
                 .and_then(|p| p.abbreviation.as_deref())
                 .unwrap_or_default(),
             t(I18nKey::PublicationAbbreviation, lang),
-            false,
             window,
             cx,
         );
         let year_input = Self::create_input(
             &literature.year.map(|y| y.to_string()).unwrap_or_default(),
             t(I18nKey::Year, lang),
-            false,
             window,
             cx,
         );
         let month_input = Self::create_input(
             &literature.month.map(|m| m.to_string()).unwrap_or_default(),
             t(I18nKey::Month, lang),
-            false,
             window,
             cx,
         );
         let day_input = Self::create_input(
             &literature.day.map(|d| d.to_string()).unwrap_or_default(),
             t(I18nKey::Day, lang),
-            false,
             window,
             cx,
         );
         let volume_input = Self::create_input(
             literature.volume.as_deref().unwrap_or(""),
             t(I18nKey::Volume, lang),
-            false,
             window,
             cx,
         );
         let issue_input = Self::create_input(
             literature.issue.as_deref().unwrap_or(""),
             t(I18nKey::Issue, lang),
-            false,
             window,
             cx,
         );
         let pages_input = Self::create_input(
             literature.pages.as_deref().unwrap_or(""),
             t(I18nKey::Pages, lang),
-            false,
             window,
             cx,
         );
-        let doi_input = Self::create_input(
-            literature.doi.as_deref().unwrap_or(""),
-            "DOI",
-            false,
-            window,
-            cx,
-        );
+        let doi_input =
+            Self::create_input(literature.doi.as_deref().unwrap_or(""), "DOI", window, cx);
         let arxiv_id_input = Self::create_input(
             literature.arxiv_id.as_deref().unwrap_or(""),
             "ArXiv ID",
-            false,
             window,
             cx,
         );
-        let url_input = Self::create_input(
-            literature.url.as_deref().unwrap_or(""),
-            "URL",
-            false,
-            window,
-            cx,
-        );
+        let url_input =
+            Self::create_input(literature.url.as_deref().unwrap_or(""), "URL", window, cx);
         let publisher_input = Self::create_input(
             literature
                 .publication
@@ -182,14 +157,12 @@ impl LiteratureEditor {
                 .and_then(|p| p.publisher.as_deref())
                 .unwrap_or(""),
             t(I18nKey::Publisher, lang),
-            false,
             window,
             cx,
         );
-        let abstract_input = Self::create_input(
+        let abstract_input = Self::create_textarea(
             literature.abstract_text.as_deref().unwrap_or(""),
             t(I18nKey::Abstract, lang),
-            true,
             window,
             cx,
         );
@@ -200,7 +173,7 @@ impl LiteratureEditor {
             .and_then(|notes| notes.into_iter().next().map(|n| n.content))
             .unwrap_or_default();
         let notes_input =
-            Self::create_input(&notes_initial, t(I18nKey::Notes, lang), true, window, cx);
+            Self::create_textarea(&notes_initial, t(I18nKey::Notes, lang), window, cx);
 
         debug!("EDITOR_NEW: 提交 Self (title='{}')", literature.title);
         Self {
@@ -231,20 +204,32 @@ impl LiteratureEditor {
     fn create_input(
         initial_value: &str,
         placeholder: &str,
-        multi_line: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<InputState> {
         let initial_value: SharedString = initial_value.to_string().into();
         let placeholder: SharedString = placeholder.to_string().into();
         cx.new(|cx| {
-            let mut state = InputState::new(window, cx)
+            InputState::new(window, cx)
                 .placeholder(placeholder)
-                .default_value(initial_value);
-            if multi_line {
-                state = state.multi_line(true).rows(5);
-            }
-            state
+                .default_value(initial_value)
+        })
+    }
+
+    /// 辅助方法：创建并初始化多行文本域
+    fn create_textarea(
+        initial_value: &str,
+        placeholder: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TextareaState> {
+        let initial_value: SharedString = initial_value.to_string().into();
+        let placeholder: SharedString = placeholder.to_string().into();
+        cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder(placeholder)
+                .default_value(initial_value)
+                .rows(5)
         })
     }
 
@@ -592,8 +577,8 @@ impl Render for LiteratureEditor {
                                 v_flex()
                                     .gap_1()
                                     .child(Label::new(t(I18nKey::Abstract, lang)).text_sm())
-                                    .child(muted_input_raw(
-                                        Input::new(&self.abstract_input).h(rems(7.5)),
+                                    .child(muted_textarea_raw(
+                                        Textarea::new(&self.abstract_input).h(rems(7.5)),
                                         cx.theme(),
                                     )),
                             ),

@@ -313,19 +313,10 @@ impl Render for LiteraturePanel {
                                                 let folder_name_drag =
                                                     entry.folder.name.clone();
 
-                                                let icon = if entry.is_expanded {
+                                                let icon = if entry.has_children && entry.is_expanded {
                                                     IconName::FolderOpen
                                                 } else {
                                                     IconName::Folder
-                                                };
-                                                let chevron = if entry.has_children {
-                                                    if entry.is_expanded {
-                                                        Some(IconName::ChevronDown)
-                                                    } else {
-                                                        Some(IconName::ChevronRight)
-                                                    }
-                                                } else {
-                                                    None
                                                 };
                                                 let parent_mw = this.parent_view.clone();
 
@@ -587,6 +578,7 @@ impl Render for LiteraturePanel {
                                                             .on_click(cx.listener({
                                                                 let folder_id =
                                                                     folder_id.clone();
+                                                                let has_children = entry.has_children;
                                                                 move |this: &mut Self,
                                                                       event:
                                                                       &gpui::ClickEvent,
@@ -596,11 +588,13 @@ impl Render for LiteraturePanel {
                                                                         .click_count()
                                                                         == 2
                                                                     {
-                                                                        this
-                                                                            .toggle_folder_expansion(
-                                                                                folder_id
-                                                                                    .clone(),
-                                                                            );
+                                                                        if has_children {
+                                                                            this
+                                                                                .toggle_folder_expansion(
+                                                                                    folder_id
+                                                                                        .clone(),
+                                                                                );
+                                                                        }
                                                                     } else {
                                                                         this
                                                                             .select_folder(
@@ -624,69 +618,37 @@ impl Render for LiteraturePanel {
                                                                                     .id(
                                                                                         SharedString::from(
                                                                                             format!(
-                                                                                                "folder-item-chevron-{}",
+                                                                                                "folder-item-icon-{}",
                                                                                                 folder_id
                                                                                             ),
-                                                                                        ),
-                                                                                    )
-                                                                                    .w(
-                                                                                        rems(
-                                                                                            0.75,
                                                                                         ),
                                                                                     )
                                                                                     .flex()
                                                                                     .items_center()
                                                                                     .justify_center()
-                                                                                    .cursor_pointer()
+                                                                                    .when(entry.has_children, |s| {
+                                                                                        s.cursor_pointer()
+                                                                                    })
                                                                                     .on_click(
-                                                                                        cx
-                                                                                            .listener(
-                                                                                        {
-                                                                                            let folder_id =
-                                                                                                folder_id
-                                                                                                    .clone(
-                                                                                                );
-                                                                                            move |this: &mut Self,
-                                                                                                  _,
-                                                                                                  _,
-                                                                                                  cx| {
-                                                                                                cx.stop_propagation(
-                                                                                                );
-                                                                                                this
-                                                                                                    .toggle_folder_expansion(
-                                                                                                        folder_id
-                                                                                                            .clone(
-                                                                                                        ),
-                                                                                                    );
-                                                                                                cx.notify(
-                                                                                                );
+                                                                                        cx.listener({
+                                                                                            let folder_id = folder_id.clone();
+                                                                                            let has_children = entry.has_children;
+                                                                                            move |this: &mut Self, _, _, cx| {
+                                                                                                if has_children {
+                                                                                                    cx.stop_propagation();
+                                                                                                    this.toggle_folder_expansion(folder_id.clone());
+                                                                                                    cx.notify();
+                                                                                                }
                                                                                             }
-                                                                                        },
-                                                                                        ),
+                                                                                        }),
                                                                                     )
-                                                                                    .children(
-                                                                                        chevron
-                                                                                            .map(
-                                                                                            |c| {
-                                                                                                Icon::new(
-                                                                                                    c,
-                                                                                                )
-                                                                                                .xsmall()
-                                                                                                .text_color(
-                                                                                                    if is_selected { theme.primary_foreground } else { theme.muted_foreground },
-                                                                                                )
-                                                                                            },
-                                                                                        ),
+                                                                                    .child(
+                                                                                        Icon::new(icon)
+                                                                                            .small()
+                                                                                            .text_color(
+                                                                                                if is_selected { theme.primary_foreground } else { theme.foreground },
+                                                                                            ),
                                                                                     ),
-                                                                            )
-                                                                            .child(
-                                                                                Icon::new(
-                                                                                    icon,
-                                                                                )
-                                                                                .small()
-                                                                                .text_color(
-                                                                                    if is_selected { theme.primary_foreground } else { theme.foreground },
-                                                                                ),
                                                                             )
                                                                             .child(
                                                                                 div()

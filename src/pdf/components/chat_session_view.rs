@@ -9,7 +9,7 @@ use gpui::{
 };
 use gpui_component::Root;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{ActiveTheme, Disableable, Icon, h_flex, label::Label, v_flex};
 use i18n::{I18nKey, Language};
@@ -29,7 +29,7 @@ pub struct ChatSessionView {
     streaming_bubble_view: Option<gpui::Entity<StreamingBubbleView>>,
     chat_reasoning_expanded: std::collections::HashSet<i64>,
     is_chat_streaming: bool,
-    chat_input_state: Option<gpui::Entity<InputState>>,
+    chat_input_state: Option<gpui::Entity<TextareaState>>,
     chat_input_sub: Option<gpui::Subscription>,
     list_state: gpui::ListState,
     chat_quote_expanded: std::collections::HashSet<i64>,
@@ -969,8 +969,7 @@ impl gpui::Render for ChatSessionView {
 
         if self.chat_input_state.is_none() {
             let entity = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .multi_line(true)
+                TextareaState::new(window, cx)
                     .placeholder(i18n::t(I18nKey::ChatInputPlaceholder, self.language))
                     .auto_grow(1, 3)
             });
@@ -1470,7 +1469,7 @@ impl gpui::Render for ChatSessionView {
                             div()
                                 .w_full()
                                 .when_some(self.chat_input_state.as_ref(), |this, e| {
-                                    this.child(Input::new(e).w_full())
+                                    this.child(Textarea::new(e).w_full())
                                 }),
                         )
                 },

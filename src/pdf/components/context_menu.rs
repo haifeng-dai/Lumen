@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, App, Context, Entity, MouseButton, PathPromptOptions, Pixels, SharedString,
     WeakEntity, Window, div, px,
 };
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, Textarea, TextareaState};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::{ActiveTheme, Icon, h_flex, v_flex};
 use i18n::I18nKey;
@@ -188,8 +188,7 @@ impl PdfReaderView {
                                 delegate.save_annotation(&cloned);
                             }
                             let input_state = cx.new(|inner_cx| {
-                                InputState::new(window, inner_cx)
-                                    .multi_line(true)
+                                TextareaState::new(window, inner_cx)
                                     .rows(3)
                                     .auto_grow(2, 10)
                                     .placeholder(i18n::t(I18nKey::NotePlaceholder, this.language))
@@ -204,7 +203,7 @@ impl PdfReaderView {
                                 let sub = cx.subscribe(
                                     &input_state,
                                     |this: &mut PdfReaderView,
-                                     _emitter: gpui::Entity<InputState>,
+                                     _emitter: gpui::Entity<TextareaState>,
                                      event: &InputEvent,
                                      cx: &mut Context<PdfReaderView>| {
                                         match event {
@@ -228,7 +227,7 @@ impl PdfReaderView {
                                 let sub = cx.subscribe(
                                     &input_state,
                                     |this: &mut PdfReaderView,
-                                     _emitter: gpui::Entity<InputState>,
+                                     _emitter: gpui::Entity<TextareaState>,
                                      event: &InputEvent,
                                      cx: &mut Context<PdfReaderView>| {
                                         if let InputEvent::PressEnter {
@@ -345,7 +344,7 @@ impl PdfReaderView {
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(Input::new(input_state).w_full())
+                        .child(Textarea::new(input_state).w_full())
                         .child(
                             h_flex()
                                 .w_full()

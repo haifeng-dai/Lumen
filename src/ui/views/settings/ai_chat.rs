@@ -1,10 +1,10 @@
 use components::IconName;
-use components::{muted_input, selector};
+use components::{muted_textarea, selector};
 use gpui::prelude::*;
 use gpui::{AppContext, Entity, SharedString, div};
 use gpui_component::{
     ActiveTheme, Icon, h_flex,
-    input::{InputEvent, InputState},
+    input::{InputEvent, TextareaState},
     setting::{SettingGroup, SettingItem, SettingPage},
 };
 use i18n::{I18nKey, t};
@@ -44,7 +44,7 @@ impl SettingsWindow {
             let app = app.clone();
             SettingItem::render(move |_, window, cx| {
                 struct PromptState {
-                    input: Entity<InputState>,
+                    input: Entity<TextareaState>,
                     _sub: gpui::Subscription,
                 }
                 let val: SharedString = app
@@ -58,11 +58,7 @@ impl SettingsWindow {
                     .into();
                 let state =
                     window.use_keyed_state::<PromptState>("chat-sys-prompt", cx, |window, cx| {
-                        let input = cx.new(|cx| {
-                            InputState::new(window, cx)
-                                .default_value(val)
-                                .multi_line(true)
-                        });
+                        let input = cx.new(|cx| TextareaState::new(window, cx).default_value(val));
                         let app = app.clone();
                         let _sub = cx.subscribe(&input, {
                             move |_, emitter, event: &InputEvent, cx| {
@@ -79,7 +75,7 @@ impl SettingsWindow {
                     });
                 let theme = cx.theme();
                 let input = &state.read(cx).input;
-                muted_input(input, theme).into_any_element()
+                muted_textarea(input, theme).into_any_element()
             })
         };
 

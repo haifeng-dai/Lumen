@@ -121,14 +121,15 @@ pub struct PdfReaderView {
     pub(crate) expanded_outlines: std::collections::HashSet<String>,
 
     // 笔记编辑器
-    pub(crate) note_input_state: Option<gpui::Entity<gpui_component::input::InputState>>,
+    pub(crate) note_input_state: Option<gpui::Entity<gpui_component::input::TextareaState>>,
     pub(crate) note_input_sub: Option<gpui::Subscription>,
     /// 防止 overlay 按钮点击后 main_content 的 mousedown+mouseup 连锁清除 overlay
     pub(crate) overlay_button_clicked: bool,
 
     // 左侧栏内联笔记编辑
     pub(crate) editing_note_sidebar_id: Option<String>,
-    pub(crate) editing_note_sidebar_input: Option<gpui::Entity<gpui_component::input::InputState>>,
+    pub(crate) editing_note_sidebar_input:
+        Option<gpui::Entity<gpui_component::input::TextareaState>>,
     pub(crate) editing_note_sidebar_sub: Option<gpui::Subscription>,
 
     // 当前界面语言
@@ -148,7 +149,7 @@ pub struct PdfReaderView {
     pub(crate) notes_cache: Vec<models::LiteratureNote>,
     pub(crate) editing_note_index: Option<usize>,
     pub(crate) edit_note_title: Option<gpui::Entity<gpui_component::input::InputState>>,
-    pub(crate) edit_note_content: Option<gpui::Entity<gpui_component::input::InputState>>,
+    pub(crate) edit_note_content: Option<gpui::Entity<gpui_component::input::TextareaState>>,
     pub(crate) summary_task: Option<gpui::Task<()>>,
     pub(crate) is_generating_summary: bool,
     pub(crate) last_ai_summary_note_id: Option<String>,
@@ -159,7 +160,7 @@ pub struct PdfReaderView {
     pub(crate) active_chat_session_id: Option<String>,
     pub(crate) chat_creating: bool,
     pub(crate) chat_create_title: Option<gpui::Entity<gpui_component::input::InputState>>,
-    pub(crate) chat_create_prompt: Option<gpui::Entity<gpui_component::input::InputState>>,
+    pub(crate) chat_create_prompt: Option<gpui::Entity<gpui_component::input::TextareaState>>,
     pub(crate) chat_session_view:
         Option<gpui::Entity<components::chat_session_view::ChatSessionView>>,
     pub(crate) chat_backend_select:

@@ -4,7 +4,7 @@ use gpui_component::{
     ActiveTheme,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputState, Textarea, TextareaState},
     label::Label,
     v_flex,
 };
@@ -18,7 +18,7 @@ pub type EditChatCallback = Box<
 
 pub struct EditChatSessionDialog {
     title_input: gpui::Entity<InputState>,
-    prompt_input: gpui::Entity<InputState>,
+    prompt_input: gpui::Entity<TextareaState>,
     language: Language,
     on_close: Option<EditChatCallback>,
 }
@@ -35,11 +35,7 @@ impl EditChatSessionDialog {
         + 'static,
     ) -> Self {
         let title_input = cx.new(|cx| InputState::new(window, cx).default_value(title));
-        let prompt_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(prompt)
-                .multi_line(true)
-        });
+        let prompt_input = cx.new(|cx| TextareaState::new(window, cx).default_value(prompt));
 
         Self {
             title_input,
@@ -116,7 +112,7 @@ impl gpui::Render for EditChatSessionDialog {
                             .child(
                                 div()
                                     .flex_grow(1.0)
-                                    .child(Input::new(&self.prompt_input).h_full()),
+                                    .child(Textarea::new(&self.prompt_input).h_full()),
                             ),
                     ),
             )

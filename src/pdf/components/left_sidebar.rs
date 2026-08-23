@@ -1106,7 +1106,7 @@ impl PdfReaderView {
                                 v_flex()
                                     .w_full()
                                     .mt_1()
-                                    .child(Input::new(input).w_full())
+                                    .child(gpui_component::input::Textarea::new(input).w_full())
                                     .child(
                                         h_flex()
                                             .w_full()

@@ -8,7 +8,7 @@ pub mod tag_selector;
 pub mod toast;
 
 pub use crate::ui::dialogs::FetchMode;
-pub use components::muted_input;
+pub use components::{muted_input, muted_input_raw, muted_textarea, muted_textarea_raw};
 pub use detail_widgets::{
     CollapsibleText, DetailRow, LinkRow, render_copy_button, render_icon_button,
 };

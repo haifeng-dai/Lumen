@@ -419,8 +419,7 @@ impl PdfReaderView {
                 self.edit_note_title = Some(entity);
 
                 let entity2 = cx.new(|cx| {
-                    gpui_component::input::InputState::new(window, cx)
-                        .multi_line(true)
+                    gpui_component::input::TextareaState::new(window, cx)
                         .placeholder("输入内容 (支持 Markdown)...")
                 });
                 entity2.update(cx, |s, cx| {
@@ -539,7 +538,7 @@ impl PdfReaderView {
                     div().w_full().flex_grow(1.0).h_0().when_some(
                         self.edit_note_content.as_ref(),
                         |this, e| {
-                            this.child(gpui_component::input::Input::new(e).w_full().h_full())
+                            this.child(gpui_component::input::Textarea::new(e).w_full().h_full())
                         },
                     ),
                 )
@@ -682,9 +681,8 @@ impl PdfReaderView {
                         s.set_value(&et, window, cx);
                     });
                     this.edit_note_title = Some(entity);
-                    let entity2 = cx.new(|cx| {
-                        gpui_component::input::InputState::new(window, cx).multi_line(true)
-                    });
+                    let entity2 =
+                        cx.new(|cx| gpui_component::input::TextareaState::new(window, cx));
                     entity2.update(cx, |s, cx| {
                         s.set_value(&ec, window, cx);
                     });
@@ -874,8 +872,7 @@ impl PdfReaderView {
             self.chat_create_title = Some(entity);
 
             let entity2 = cx.new(|cx| {
-                gpui_component::input::InputState::new(window, cx)
-                    .multi_line(true)
+                gpui_component::input::TextareaState::new(window, cx)
                     .placeholder("系统提示词 (可选)")
             });
             let lang_name = self.language.name();
@@ -981,7 +978,7 @@ impl PdfReaderView {
                     self.chat_create_prompt.as_ref(),
                     |this, e| {
                         this.child(
-                            gpui_component::input::Input::new(e).w_full().h_full(),
+                            gpui_component::input::Textarea::new(e).w_full().h_full(),
                         )
                     },
                 ),

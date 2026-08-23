@@ -1,5 +1,8 @@
 use crate::app_state::data::DataStore;
-use crate::ui::{components::muted_input, views::main_window::MainWindow};
+use crate::ui::{
+    components::{muted_input, muted_textarea},
+    views::main_window::MainWindow,
+};
 use components::IconName;
 use gpui::prelude::*;
 use gpui::{
@@ -10,7 +13,7 @@ use gpui_component::{
     ActiveTheme, Icon, ThemeMode,
     button::{Button, ButtonVariants},
     h_flex,
-    input::InputState,
+    input::{InputState, TextareaState},
     label::Label,
     v_flex,
 };
@@ -94,7 +97,7 @@ pub struct LiteratureDetailView {
     notes_cache: Vec<models::LiteratureNote>,
     editing_note_index: Option<usize>,
     edit_note_title: Option<Entity<InputState>>,
-    edit_note_content: Option<Entity<InputState>>,
+    edit_note_content: Option<Entity<TextareaState>>,
     /// AI 总结任务句柄
     summary_task: Option<Task<()>>,
     /// 是否正在生成 AI 总结
@@ -233,9 +236,7 @@ impl Render for LiteratureDetailView {
                 self.edit_note_title = Some(entity);
 
                 let entity2 = cx.new(|cx| {
-                    InputState::new(window, cx)
-                        .multi_line(true)
-                        .placeholder("输入内容 (支持 Markdown)...")
+                    TextareaState::new(window, cx).placeholder("输入内容 (支持 Markdown)...")
                 });
                 entity2.update(cx, |s, cx| {
                     s.set_value(&content, window, cx);
@@ -369,7 +370,7 @@ impl Render for LiteratureDetailView {
                                 .flex_grow(1.0)
                                 .h_0()
                                 .when_some(self.edit_note_content.as_ref(), |this, e| {
-                                    this.child(muted_input(e, &theme).w_full().h_full())
+                                    this.child(muted_textarea(e, &theme).w_full().h_full())
                                 }),
                         ),
                 )
