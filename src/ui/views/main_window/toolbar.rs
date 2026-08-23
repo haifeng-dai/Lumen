@@ -1,10 +1,7 @@
 use crate::app_state::ui::UiState;
 use crate::ui::views::toolbar::{ToolbarEvent, ToolbarView};
-use gpui::{
-    AppContext, AsyncApp, Entity, Window, prelude::*,
-};
+use gpui::{AppContext, AsyncApp, Entity, Window, prelude::*};
 use services::query::data::{SortField, SortOrder};
-
 
 impl super::MainWindow {
     pub(crate) fn handle_toolbar_events(
@@ -108,5 +105,4 @@ impl super::MainWindow {
         })
         .detach();
     }
-
 }

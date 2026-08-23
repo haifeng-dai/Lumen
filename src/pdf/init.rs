@@ -1,10 +1,6 @@
 use gpui::prelude::*;
-use gpui::{
-    Context, ListAlignment, ListState, px,
-};
-use services::pdf::{
-    AnnotationState, PdfInitialState, PdfReaderDelegate, PdfService,
-};
+use gpui::{Context, ListAlignment, ListState, px};
+use services::pdf::{AnnotationState, PdfInitialState, PdfReaderDelegate, PdfService};
 
 use i18n::Language;
 use std::collections::{HashMap, HashSet};

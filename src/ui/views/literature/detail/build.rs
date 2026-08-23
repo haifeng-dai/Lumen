@@ -126,7 +126,11 @@ impl super::LiteratureDetailView {
             .collect()
     }
 
-    pub(super) fn build_references(&self, lit: &Literature, store: &DataStore) -> Vec<Arc<Literature>> {
+    pub(super) fn build_references(
+        &self,
+        lit: &Literature,
+        store: &DataStore,
+    ) -> Vec<Arc<Literature>> {
         self.app
             .db
             .get_references(&lit.id)
@@ -142,7 +146,11 @@ impl super::LiteratureDetailView {
             .collect()
     }
 
-    pub(super) fn build_cited_by(&self, lit: &Literature, store: &DataStore) -> Vec<Arc<Literature>> {
+    pub(super) fn build_cited_by(
+        &self,
+        lit: &Literature,
+        store: &DataStore,
+    ) -> Vec<Arc<Literature>> {
         self.app
             .db
             .get_cited_by(&lit.id)
@@ -158,7 +166,11 @@ impl super::LiteratureDetailView {
             .collect()
     }
 
-    pub(super) fn build_folder_paths(lit: &Literature, store: &DataStore, lang: Language) -> Vec<Vec<String>> {
+    pub(super) fn build_folder_paths(
+        lit: &Literature,
+        store: &DataStore,
+        lang: Language,
+    ) -> Vec<Vec<String>> {
         lit.folder_ids
             .iter()
             .map(|folder_id| {
@@ -184,5 +196,4 @@ impl super::LiteratureDetailView {
             })
             .collect()
     }
-
 }

@@ -1,9 +1,7 @@
 use crate::ui::notification::show_notification;
 use futures_util::{StreamExt, TryFutureExt};
 use gpui::prelude::*;
-use gpui::{
-    AsyncApp, WeakEntity, Window,
-};
+use gpui::{AsyncApp, WeakEntity, Window};
 use gpui_component::notification::NotificationType;
 use log::error;
 
@@ -217,5 +215,4 @@ impl super::LiteratureDetailView {
 
         self.summary_task = Some(task);
     }
-
 }

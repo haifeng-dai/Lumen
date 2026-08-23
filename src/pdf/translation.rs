@@ -1,8 +1,6 @@
 use self::text_format::clean_translation_text;
 use gpui::prelude::*;
-use gpui::{
-    AsyncApp, Context, WeakEntity, Window,
-};
+use gpui::{AsyncApp, Context, WeakEntity, Window};
 use gpui_component::select::SelectEvent;
 use services::pdf::PdfReaderDelegate;
 

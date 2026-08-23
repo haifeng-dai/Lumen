@@ -3,7 +3,8 @@ use components::IconName;
 use gpui::prelude::*;
 use gpui::{MouseButton, div, rems};
 use gpui_component::{
-    ActiveTheme, Icon, h_flex, label::Label,
+    ActiveTheme, Icon, h_flex,
+    label::Label,
     setting::{SettingGroup, SettingItem, SettingPage},
     v_flex,
 };

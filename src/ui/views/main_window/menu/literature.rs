@@ -12,7 +12,10 @@ use i18n::{I18nKey, Language, t};
 use parser::export::ExportFormat;
 use std::sync::Arc;
 
-use super::{BatchSource, FetchSource, FolderSelectClosure, LiteraturePrefetch, build_folder_level, copy_citation, danger_menu_item};
+use super::{
+    BatchSource, FetchSource, FolderSelectClosure, LiteraturePrefetch, build_folder_level,
+    copy_citation, danger_menu_item,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_literature_menu(
@@ -27,13 +30,8 @@ pub(super) fn build_literature_menu(
 ) -> PopupMenu {
     let mut menu = menu;
     // 使用提前预取的数据，避免闭包内二次借用 cx
-    let (
-        selected_count,
-        selected_ids,
-        in_trash,
-        lit,
-        (custom_name_map, custom_children_map),
-    ) = literature_prefetch.clone().unwrap_or_default();
+    let (selected_count, selected_ids, in_trash, lit, (custom_name_map, custom_children_map)) =
+        literature_prefetch.clone().unwrap_or_default();
     if in_trash {
         // 1. 还原到
         let this_weak_clone = this_weak.clone();
@@ -42,50 +40,47 @@ pub(super) fn build_literature_menu(
         let custom_nm = custom_name_map.clone();
         let custom_cm = custom_children_map.clone();
 
-        let restore_submenu =
-            PopupMenu::build(window, cx, move |mut m, window, cx| {
-                let this_weak_inner = this_weak_clone.clone();
-                let lit_id_inner = lit_id_restore.clone();
-                let sel_ids_inner = sel_ids.clone();
-                m = m.item(
-                    PopupMenuItem::new(t(I18nKey::AllLiterature, lang)).on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    let _ = this.app.smart_restore_literatures(
-                                        &lit_id_inner,
-                                        None,
-                                        &sel_ids_inner,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ),
-                );
-
-                let on_select: FolderSelectClosure = Arc::new({
-                    let this_weak_tree = this_weak_clone.clone();
-                    let lit_id_tree = lit_id_restore.clone();
-                    let sel_ids_tree = sel_ids.clone();
-                    move |folder_id, _window, cx| {
-                        if let Some(this) = this_weak_tree.upgrade() {
+        let restore_submenu = PopupMenu::build(window, cx, move |mut m, window, cx| {
+            let this_weak_inner = this_weak_clone.clone();
+            let lit_id_inner = lit_id_restore.clone();
+            let sel_ids_inner = sel_ids.clone();
+            m = m.item(
+                PopupMenuItem::new(t(I18nKey::AllLiterature, lang)).on_click(
+                    move |_, _window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
                             this.update(cx, |this, cx| {
                                 let _ = this.app.smart_restore_literatures(
-                                    &lit_id_tree,
-                                    Some(folder_id),
-                                    &sel_ids_tree,
+                                    &lit_id_inner,
+                                    None,
+                                    &sel_ids_inner,
                                 );
                                 this.close_menus(cx);
                             });
                         }
+                    },
+                ),
+            );
+
+            let on_select: FolderSelectClosure = Arc::new({
+                let this_weak_tree = this_weak_clone.clone();
+                let lit_id_tree = lit_id_restore.clone();
+                let sel_ids_tree = sel_ids.clone();
+                move |folder_id, _window, cx| {
+                    if let Some(this) = this_weak_tree.upgrade() {
+                        this.update(cx, |this, cx| {
+                            let _ = this.app.smart_restore_literatures(
+                                &lit_id_tree,
+                                Some(folder_id),
+                                &sel_ids_tree,
+                            );
+                            this.close_menus(cx);
+                        });
                     }
-                });
-                m = build_folder_level(
-                    m, None, &custom_nm, &custom_cm, &on_select, window, cx,
-                );
-                m
+                }
             });
+            m = build_folder_level(m, None, &custom_nm, &custom_cm, &on_select, window, cx);
+            m
+        });
 
         menu = menu.item(
             PopupMenuItem::submenu(t(I18nKey::RestoreTo, lang), restore_submenu)
@@ -107,9 +102,7 @@ pub(super) fn build_literature_menu(
             .on_click(move |_, _window, cx| {
                 if let Some(this) = this_weak_clone.upgrade() {
                     this.update(cx, |this, cx| {
-                        let _ = this
-                            .app
-                            .smart_delete_literature(&lit_id_delete, &sel_ids);
+                        let _ = this.app.smart_delete_literature(&lit_id_delete, &sel_ids);
                         this.close_menus(cx);
                     });
                 }
@@ -138,129 +131,108 @@ pub(super) fn build_literature_menu(
             if let Some(lit) = &lit {
                 let lit_clone = lit.clone();
                 let this_weak_clone = this_weak.clone();
-                let fetch_submenu =
-                    PopupMenu::build(window, cx, move |mut m, _window, _cx| {
-                        // 2.1 ArXiv
-                        let this_weak_inner = this_weak_clone.clone();
-                        let lit_inner = lit_clone.clone();
-                        m = m.item(PopupMenuItem::new("ArXiv").on_click(
-                            move |_, window, cx| {
-                                if let Some(this) = this_weak_inner.upgrade() {
-                                    this.update(cx, |this, cx| {
-                                        let arxiv_id =
-                                            super::super::utils::extract_arxiv_id(
-                                                &lit_inner,
-                                            );
-                                        if let Some(id) = arxiv_id {
-                                            this.start_fetch_and_compare(
-                                                std::sync::Arc::new(
-                                                    lit_inner.clone(),
-                                                ),
-                                                FetchSource::ArXiv(id),
-                                                window,
-                                                cx,
-                                            );
-                                        } else {
-                                            show_notification(
-                                                NotificationType::Error,
-                                                t(I18nKey::FetchFailed, lang),
-                                                cx,
-                                            );
-                                        }
-                                        this.close_menus(cx);
-                                    });
+                let fetch_submenu = PopupMenu::build(window, cx, move |mut m, _window, _cx| {
+                    // 2.1 ArXiv
+                    let this_weak_inner = this_weak_clone.clone();
+                    let lit_inner = lit_clone.clone();
+                    m = m.item(PopupMenuItem::new("ArXiv").on_click(move |_, window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
+                            this.update(cx, |this, cx| {
+                                let arxiv_id = super::super::utils::extract_arxiv_id(&lit_inner);
+                                if let Some(id) = arxiv_id {
+                                    this.start_fetch_and_compare(
+                                        std::sync::Arc::new(lit_inner.clone()),
+                                        FetchSource::ArXiv(id),
+                                        window,
+                                        cx,
+                                    );
+                                } else {
+                                    show_notification(
+                                        NotificationType::Error,
+                                        t(I18nKey::FetchFailed, lang),
+                                        cx,
+                                    );
                                 }
-                            },
-                        ));
+                                this.close_menus(cx);
+                            });
+                        }
+                    }));
 
-                        // 2.2 DBLP
-                        let this_weak_inner = this_weak_clone.clone();
-                        let lit_inner = lit_clone.clone();
-                        m = m.item(PopupMenuItem::new("DBLP").on_click(
-                            move |_, window, cx| {
-                                if let Some(this) = this_weak_inner.upgrade() {
-                                    this.update(cx, |this, cx| {
-                                        if lit_inner.title.is_empty() {
-                                            show_notification(
-                                                NotificationType::Error,
-                                                t(I18nKey::FetchFailed, lang),
-                                                cx,
-                                            );
-                                        } else {
-                                            this.start_fetch_and_compare(
-                                                std::sync::Arc::new(
-                                                    lit_inner.clone(),
-                                                ),
-                                                FetchSource::Dblp(
-                                                    lit_inner.title.clone(),
-                                                ),
-                                                window,
-                                                cx,
-                                            );
-                                        }
-                                        this.close_menus(cx);
-                                    });
+                    // 2.2 DBLP
+                    let this_weak_inner = this_weak_clone.clone();
+                    let lit_inner = lit_clone.clone();
+                    m = m.item(PopupMenuItem::new("DBLP").on_click(move |_, window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
+                            this.update(cx, |this, cx| {
+                                if lit_inner.title.is_empty() {
+                                    show_notification(
+                                        NotificationType::Error,
+                                        t(I18nKey::FetchFailed, lang),
+                                        cx,
+                                    );
+                                } else {
+                                    this.start_fetch_and_compare(
+                                        std::sync::Arc::new(lit_inner.clone()),
+                                        FetchSource::Dblp(lit_inner.title.clone()),
+                                        window,
+                                        cx,
+                                    );
                                 }
-                            },
-                        ));
+                                this.close_menus(cx);
+                            });
+                        }
+                    }));
 
-                        // 2.3 DOI
-                        let this_weak_inner = this_weak_clone.clone();
-                        let lit_inner = lit_clone.clone();
-                        m = m.item(PopupMenuItem::new("DOI").on_click(
-                            move |_, window, cx| {
-                                if let Some(this) = this_weak_inner.upgrade() {
-                                    this.update(cx, |this, cx| {
-                                        let doi_opt = lit_inner.doi.clone();
-                                        if let Some(id) = doi_opt {
-                                            this.start_fetch_and_compare(
-                                                std::sync::Arc::new(
-                                                    lit_inner.clone(),
-                                                ),
-                                                FetchSource::Doi(id),
-                                                window,
-                                                cx,
-                                            );
-                                        } else {
-                                            show_notification(
-                                                NotificationType::Error,
-                                                t(I18nKey::FetchFailed, lang),
-                                                cx,
-                                            );
-                                        }
-                                        this.close_menus(cx);
-                                    });
+                    // 2.3 DOI
+                    let this_weak_inner = this_weak_clone.clone();
+                    let lit_inner = lit_clone.clone();
+                    m = m.item(PopupMenuItem::new("DOI").on_click(move |_, window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
+                            this.update(cx, |this, cx| {
+                                let doi_opt = lit_inner.doi.clone();
+                                if let Some(id) = doi_opt {
+                                    this.start_fetch_and_compare(
+                                        std::sync::Arc::new(lit_inner.clone()),
+                                        FetchSource::Doi(id),
+                                        window,
+                                        cx,
+                                    );
+                                } else {
+                                    show_notification(
+                                        NotificationType::Error,
+                                        t(I18nKey::FetchFailed, lang),
+                                        cx,
+                                    );
                                 }
-                            },
-                        ));
+                                this.close_menus(cx);
+                            });
+                        }
+                    }));
 
-                        // 2.4 OpenAlex
-                        let this_weak_inner = this_weak_clone.clone();
-                        let lit_inner = lit_clone.clone();
-                        m = m.item(PopupMenuItem::new("OpenAlex").on_click(
-                            move |_, window, cx| {
-                                if let Some(this) = this_weak_inner.upgrade() {
-                                    this.update(cx, |this, cx| {
-                                        this.start_fetch_openalex(
-                                            std::sync::Arc::new(lit_inner.clone()),
-                                            window,
-                                            cx,
-                                        );
-                                        this.close_menus(cx);
-                                    });
-                                }
-                            },
-                        ));
+                    // 2.4 OpenAlex
+                    let this_weak_inner = this_weak_clone.clone();
+                    let lit_inner = lit_clone.clone();
+                    m = m.item(
+                        PopupMenuItem::new("OpenAlex").on_click(move |_, window, cx| {
+                            if let Some(this) = this_weak_inner.upgrade() {
+                                this.update(cx, |this, cx| {
+                                    this.start_fetch_openalex(
+                                        std::sync::Arc::new(lit_inner.clone()),
+                                        window,
+                                        cx,
+                                    );
+                                    this.close_menus(cx);
+                                });
+                            }
+                        }),
+                    );
 
-                        m
-                    });
+                    m
+                });
 
                 menu = menu.item(
-                    PopupMenuItem::submenu(
-                        t(I18nKey::FetchFrom, lang),
-                        fetch_submenu,
-                    )
-                    .icon(Icon::new(IconName::Cloud)),
+                    PopupMenuItem::submenu(t(I18nKey::FetchFrom, lang), fetch_submenu)
+                        .icon(Icon::new(IconName::Cloud)),
                 );
             }
         }
@@ -268,61 +240,19 @@ pub(super) fn build_literature_menu(
         // 3. 复制引用 (二级子菜单: BibTeX / IEEE / 爱思微尔)
         let this_weak_clone = this_weak.clone();
         let sel_ids = selected_ids.clone();
-        let citation_submenu =
-            PopupMenu::build(window, cx, move |mut m, _window, _cx| {
-                // BibTeX
-                let this_weak_inner = this_weak_clone.clone();
-                let sel_ids_inner = sel_ids.clone();
-                m = m.item(
-                    PopupMenuItem::new(t(I18nKey::CitationBibTeX, lang)).on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    copy_citation(
-                                        &this.app,
-                                        &sel_ids_inner,
-                                        ExportFormat::BibTeX,
-                                        lang,
-                                        cx,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ),
-                );
-                // IEEE
-                let this_weak_inner = this_weak_clone.clone();
-                let sel_ids_inner = sel_ids.clone();
-                m = m.item(
-                    PopupMenuItem::new(t(I18nKey::CitationIeee, lang)).on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    copy_citation(
-                                        &this.app,
-                                        &sel_ids_inner,
-                                        ExportFormat::IEEE,
-                                        lang,
-                                        cx,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ),
-                );
-                // Elsevier
-                let this_weak_inner = this_weak_clone.clone();
-                let sel_ids_inner = sel_ids.clone();
-                m = m.item(PopupMenuItem::new("Elsevier").on_click(
+        let citation_submenu = PopupMenu::build(window, cx, move |mut m, _window, _cx| {
+            // BibTeX
+            let this_weak_inner = this_weak_clone.clone();
+            let sel_ids_inner = sel_ids.clone();
+            m = m.item(
+                PopupMenuItem::new(t(I18nKey::CitationBibTeX, lang)).on_click(
                     move |_, _window, cx| {
                         if let Some(this) = this_weak_inner.upgrade() {
                             this.update(cx, |this, cx| {
                                 copy_citation(
                                     &this.app,
                                     &sel_ids_inner,
-                                    ExportFormat::Elsevier,
+                                    ExportFormat::BibTeX,
                                     lang,
                                     cx,
                                 );
@@ -330,16 +260,46 @@ pub(super) fn build_literature_menu(
                             });
                         }
                     },
-                ));
-                m
-            });
+                ),
+            );
+            // IEEE
+            let this_weak_inner = this_weak_clone.clone();
+            let sel_ids_inner = sel_ids.clone();
+            m = m.item(PopupMenuItem::new(t(I18nKey::CitationIeee, lang)).on_click(
+                move |_, _window, cx| {
+                    if let Some(this) = this_weak_inner.upgrade() {
+                        this.update(cx, |this, cx| {
+                            copy_citation(&this.app, &sel_ids_inner, ExportFormat::IEEE, lang, cx);
+                            this.close_menus(cx);
+                        });
+                    }
+                },
+            ));
+            // Elsevier
+            let this_weak_inner = this_weak_clone.clone();
+            let sel_ids_inner = sel_ids.clone();
+            m = m.item(
+                PopupMenuItem::new("Elsevier").on_click(move |_, _window, cx| {
+                    if let Some(this) = this_weak_inner.upgrade() {
+                        this.update(cx, |this, cx| {
+                            copy_citation(
+                                &this.app,
+                                &sel_ids_inner,
+                                ExportFormat::Elsevier,
+                                lang,
+                                cx,
+                            );
+                            this.close_menus(cx);
+                        });
+                    }
+                }),
+            );
+            m
+        });
 
         menu = menu.item(
-            PopupMenuItem::submenu(
-                t(I18nKey::CopyCitation, lang),
-                citation_submenu,
-            )
-            .icon(Icon::new(IconName::Copy)),
+            PopupMenuItem::submenu(t(I18nKey::CopyCitation, lang), citation_submenu)
+                .icon(Icon::new(IconName::Copy)),
         );
 
         // ==================== 第二菜单组：级联文件夹管理 ====================
@@ -369,13 +329,10 @@ pub(super) fn build_literature_menu(
                 }
             });
 
-            let add_submenu =
-                PopupMenu::build(window, cx, move |mut m, window, cx| {
-                    m = build_folder_level(
-                        m, None, &custom_nm, &custom_cm, &on_select, window, cx,
-                    );
-                    m
-                });
+            let add_submenu = PopupMenu::build(window, cx, move |mut m, window, cx| {
+                m = build_folder_level(m, None, &custom_nm, &custom_cm, &on_select, window, cx);
+                m
+            });
 
             menu = menu.item(
                 PopupMenuItem::submenu(t(I18nKey::AddTo, lang), add_submenu)
@@ -421,88 +378,70 @@ pub(super) fn build_literature_menu(
         if selected_count > 1 {
             let this_weak_clone = this_weak.clone();
             let sel_ids = selected_ids.clone();
-            let batch_submenu =
-                PopupMenu::build(window, cx, move |mut m, _window, _cx| {
-                    // 7.1 ArXiv 批量
-                    let this_weak_inner = this_weak_clone.clone();
-                    let sel_ids_inner = {
-                        let mut hs = Vec::new();
-                        hs.extend(sel_ids.clone());
-                        hs
-                    };
-                    m = m.item(PopupMenuItem::new("ArXiv").on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    let mut items = Vec::new();
-                                    items.extend(sel_ids_inner.clone());
-                                    this.handle_batch_fetch_metadata(
-                                        items,
-                                        BatchSource::ArXiv,
-                                        cx,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ));
+            let batch_submenu = PopupMenu::build(window, cx, move |mut m, _window, _cx| {
+                // 7.1 ArXiv 批量
+                let this_weak_inner = this_weak_clone.clone();
+                let sel_ids_inner = {
+                    let mut hs = Vec::new();
+                    hs.extend(sel_ids.clone());
+                    hs
+                };
+                m = m.item(PopupMenuItem::new("ArXiv").on_click(move |_, _window, cx| {
+                    if let Some(this) = this_weak_inner.upgrade() {
+                        this.update(cx, |this, cx| {
+                            let mut items = Vec::new();
+                            items.extend(sel_ids_inner.clone());
+                            this.handle_batch_fetch_metadata(items, BatchSource::ArXiv, cx);
+                            this.close_menus(cx);
+                        });
+                    }
+                }));
 
-                    // 7.2 Crossref 批量
-                    let this_weak_inner = this_weak_clone.clone();
-                    let sel_ids_inner = {
-                        let mut hs = Vec::new();
-                        hs.extend(sel_ids.clone());
-                        hs
-                    };
-                    m = m.item(PopupMenuItem::new("Crossref").on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    let mut items = Vec::new();
-                                    items.extend(sel_ids_inner.clone());
-                                    this.handle_batch_fetch_metadata(
-                                        items,
-                                        BatchSource::Doi,
-                                        cx,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ));
+                // 7.2 Crossref 批量
+                let this_weak_inner = this_weak_clone.clone();
+                let sel_ids_inner = {
+                    let mut hs = Vec::new();
+                    hs.extend(sel_ids.clone());
+                    hs
+                };
+                m = m.item(
+                    PopupMenuItem::new("Crossref").on_click(move |_, _window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
+                            this.update(cx, |this, cx| {
+                                let mut items = Vec::new();
+                                items.extend(sel_ids_inner.clone());
+                                this.handle_batch_fetch_metadata(items, BatchSource::Doi, cx);
+                                this.close_menus(cx);
+                            });
+                        }
+                    }),
+                );
 
-                    // 7.3 OpenAlex 批量
-                    let this_weak_inner = this_weak_clone.clone();
-                    let sel_ids_inner = {
-                        let mut hs = Vec::new();
-                        hs.extend(sel_ids.clone());
-                        hs
-                    };
-                    m = m.item(PopupMenuItem::new("OpenAlex").on_click(
-                        move |_, _window, cx| {
-                            if let Some(this) = this_weak_inner.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    let mut items = Vec::new();
-                                    items.extend(sel_ids_inner.clone());
-                                    this.handle_batch_fetch_metadata(
-                                        items,
-                                        BatchSource::OpenAlex,
-                                        cx,
-                                    );
-                                    this.close_menus(cx);
-                                });
-                            }
-                        },
-                    ));
-                    m
-                });
+                // 7.3 OpenAlex 批量
+                let this_weak_inner = this_weak_clone.clone();
+                let sel_ids_inner = {
+                    let mut hs = Vec::new();
+                    hs.extend(sel_ids.clone());
+                    hs
+                };
+                m = m.item(
+                    PopupMenuItem::new("OpenAlex").on_click(move |_, _window, cx| {
+                        if let Some(this) = this_weak_inner.upgrade() {
+                            this.update(cx, |this, cx| {
+                                let mut items = Vec::new();
+                                items.extend(sel_ids_inner.clone());
+                                this.handle_batch_fetch_metadata(items, BatchSource::OpenAlex, cx);
+                                this.close_menus(cx);
+                            });
+                        }
+                    }),
+                );
+                m
+            });
 
             menu = menu.item(
-                PopupMenuItem::submenu(
-                    t(I18nKey::BatchFetchMetadata, lang),
-                    batch_submenu,
-                )
-                .icon(Icon::new(IconName::Cloud)),
+                PopupMenuItem::submenu(t(I18nKey::BatchFetchMetadata, lang), batch_submenu)
+                    .icon(Icon::new(IconName::Cloud)),
             );
         }
 
@@ -512,17 +451,16 @@ pub(super) fn build_literature_menu(
         let sel_ids = selected_ids.clone();
         let delete_label = t(I18nKey::Delete, lang);
         menu = menu.item(
-            danger_menu_item(cx.theme().danger, delete_label, IconName::Trash)
-                .on_click(move |_, _window, cx| {
+            danger_menu_item(cx.theme().danger, delete_label, IconName::Trash).on_click(
+                move |_, _window, cx| {
                     if let Some(this) = this_weak_clone.upgrade() {
                         this.update(cx, |this, cx| {
-                            let _ = this
-                                .app
-                                .smart_delete_literature(&lit_id_delete, &sel_ids);
+                            let _ = this.app.smart_delete_literature(&lit_id_delete, &sel_ids);
                             this.close_menus(cx);
                         });
                     }
-                }),
+                },
+            ),
         );
     }
     menu

@@ -2,19 +2,11 @@ use crate::app_state::theme::surface;
 use crate::ui::components::render_icon_button;
 use components::IconName;
 use gpui::prelude::*;
-use gpui::{
-    ClickEvent,
-    MouseButton, SharedString, Window, div, rems,
-};
-use gpui_component::{
-    Colorize, Icon, Theme,
-    h_flex,
-    input::InputState,
-    v_flex,
-};
+use gpui::{ClickEvent, MouseButton, SharedString, Window, div, rems};
+use gpui_component::{Colorize, Icon, Theme, h_flex, input::InputState, v_flex};
 use i18n::{I18nKey, Language, t};
-use models::theme::ResolvedSurface;
 use models::Literature;
+use models::theme::ResolvedSurface;
 
 use super::SingleDetailBuffer;
 
@@ -579,5 +571,4 @@ impl super::LiteratureDetailView {
             })
             .when(!note_cards.is_empty(), |this| this.children(note_cards))
     }
-
 }

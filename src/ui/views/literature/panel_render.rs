@@ -11,8 +11,8 @@ use services::sync::SyncStatus;
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, AppContext, Hsla, KeyDownEvent, MouseButton, MouseDownEvent, Point,
-    SharedString, Window, div, px, rems, uniform_list,
+    AnyElement, AppContext, Hsla, KeyDownEvent, MouseButton, MouseDownEvent, Point, SharedString,
+    Window, div, px, rems, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Icon, Sizable, Theme,
@@ -880,7 +880,6 @@ impl Render for LiteraturePanel {
             )
     }
 }
-
 
 pub(crate) struct FolderTreeEntry {
     pub(crate) folder: Arc<Folder>,

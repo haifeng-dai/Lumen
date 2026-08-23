@@ -195,4 +195,3 @@ impl MainApp {
         self.batch_delete_literatures(&ids)
     }
 }
-

@@ -1,14 +1,14 @@
 use env_logger::{Builder, Target};
 use log::{LevelFilter, error, info, logger};
 use models::config::AppConfig;
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 use std::{
     fs::{OpenOptions, create_dir_all},
     io::Write,
     panic::set_hook,
     path::Path,
 };
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
 
 pub(crate) fn setup_stderr_redirection(log_path: &std::path::Path) {
     if let Ok(file) = OpenOptions::new().create(true).append(true).open(log_path) {
@@ -68,7 +68,6 @@ pub(crate) fn setup_panic_hook() {
         logger().flush();
     }));
 }
-
 
 pub(crate) fn init_logger_with_path(config: &AppConfig, log_path: &Path) {
     // 确保日志目录存在

@@ -137,5 +137,4 @@ impl super::LiteratureDetailView {
             folder_paths,
         })
     }
-
 }

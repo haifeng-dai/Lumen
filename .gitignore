@@ -5,7 +5,6 @@ AGENTS.md
 .cargo/
 .qoder/
 .rustup/
-.mimocode/
 .workbuddy/
 
 docs/
@@ -13,4 +12,3 @@ target/
 dist/
 assets/png_exports/
 examples/
-vendor/

@@ -14,8 +14,9 @@ use services::feed::SubscriptionRefreshResult;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{FolderChildrenMap, FolderNameMap, FolderSelectClosure, build_folder_level, danger_menu_item};
-
+use super::{
+    FolderChildrenMap, FolderNameMap, FolderSelectClosure, build_folder_level, danger_menu_item,
+};
 
 pub(super) fn build_subscription_menu(
     menu: PopupMenu,
@@ -55,11 +56,7 @@ pub(super) fn build_subscription_menu(
                 .on_click(move |_, window, cx| {
                     if let Some(this) = this_weak_clone.upgrade() {
                         this.update(cx, |this, cx| {
-                            this.open_edit_subscription_modal(
-                                sid_edit.clone(),
-                                window,
-                                cx,
-                            );
+                            this.open_edit_subscription_modal(sid_edit.clone(), window, cx);
                             this.close_menus(cx);
                         });
                     }
@@ -70,20 +67,16 @@ pub(super) fn build_subscription_menu(
         let this_weak_clone = this_weak.clone();
         let sid_delete = sid.clone();
         menu = menu.item(
-            danger_menu_item(
-                cx.theme().danger,
-                t(I18nKey::Delete, lang),
-                IconName::Trash,
-            )
-            .on_click(move |_, _window, cx| {
-                if let Some(this) = this_weak_clone.upgrade() {
-                    let app = this.read(cx).app.clone();
-                    let _ = app.delete_feed(&sid_delete);
-                    this.update(&mut *cx, |this, cx| {
-                        this.close_menus(cx);
-                    });
-                }
-            }),
+            danger_menu_item(cx.theme().danger, t(I18nKey::Delete, lang), IconName::Trash)
+                .on_click(move |_, _window, cx| {
+                    if let Some(this) = this_weak_clone.upgrade() {
+                        let app = this.read(cx).app.clone();
+                        let _ = app.delete_feed(&sid_delete);
+                        this.update(&mut *cx, |this, cx| {
+                            this.close_menus(cx);
+                        });
+                    }
+                }),
         );
     }
     menu
@@ -169,63 +162,57 @@ pub(super) fn build_subscription_item_menu(
         let this_weak_clone = this_weak.clone();
         let sub_id_add = sub_id.clone();
 
-        let add_library_submenu =
-            PopupMenu::build(window, cx, move |mut m, window, cx| {
-                // 1.1 文献库（原未分类）：仅加入文献库，不指定文件夹
-                let this_weak_uncat = this_weak_clone.clone();
-                let sub_id_uncat = sub_id_add.clone();
-                m = m.item(PopupMenuItem::new(t(I18nKey::Library, lang)).on_click(
-                    move |_, _window, cx| {
-                        if let Some(this) = this_weak_uncat.upgrade() {
-                            let id = sub_id_uncat.clone();
-                            let app = this.read(cx).app.clone();
-                            if let Err(e) = app.add_feed_item_to_library(&id) {
+        let add_library_submenu = PopupMenu::build(window, cx, move |mut m, window, cx| {
+            // 1.1 文献库（原未分类）：仅加入文献库，不指定文件夹
+            let this_weak_uncat = this_weak_clone.clone();
+            let sub_id_uncat = sub_id_add.clone();
+            m = m.item(PopupMenuItem::new(t(I18nKey::Library, lang)).on_click(
+                move |_, _window, cx| {
+                    if let Some(this) = this_weak_uncat.upgrade() {
+                        let id = sub_id_uncat.clone();
+                        let app = this.read(cx).app.clone();
+                        if let Err(e) = app.add_feed_item_to_library(&id) {
+                            error!("添加到文献库失败: {e}");
+                        }
+                        this.update(cx, |this, cx| this.close_menus(cx));
+                    }
+                },
+            ));
+            // 1.2 各自定义文件夹（多级树，不限层级）
+            let on_select: FolderSelectClosure = Arc::new({
+                let this_weak_tree = this_weak_clone.clone();
+                let sub_id_tree = sub_id_add.clone();
+                move |folder_id, _window, cx| {
+                    if let Some(this) = this_weak_tree.upgrade() {
+                        let id = sub_id_tree.clone();
+                        let app = this.read(cx).app.clone();
+                        match app.add_feed_item_to_library(&id) {
+                            Ok(lit_id) => {
+                                let _ = app.add_literature_to_folder(&lit_id, folder_id);
+                            }
+                            Err(e) => {
                                 error!("添加到文献库失败: {e}");
                             }
-                            this.update(cx, |this, cx| this.close_menus(cx));
                         }
-                    },
-                ));
-                // 1.2 各自定义文件夹（多级树，不限层级）
-                let on_select: FolderSelectClosure = Arc::new({
-                    let this_weak_tree = this_weak_clone.clone();
-                    let sub_id_tree = sub_id_add.clone();
-                    move |folder_id, _window, cx| {
-                        if let Some(this) = this_weak_tree.upgrade() {
-                            let id = sub_id_tree.clone();
-                            let app = this.read(cx).app.clone();
-                            match app.add_feed_item_to_library(&id) {
-                                Ok(lit_id) => {
-                                    let _ = app.add_literature_to_folder(
-                                        &lit_id, folder_id,
-                                    );
-                                }
-                                Err(e) => {
-                                    error!("添加到文献库失败: {e}");
-                                }
-                            }
-                            this.update(cx, |this, cx| this.close_menus(cx));
-                        }
+                        this.update(cx, |this, cx| this.close_menus(cx));
                     }
-                });
-                m = build_folder_level(
-                    m,
-                    None,
-                    &sub_name_map,
-                    &sub_children_map,
-                    &on_select,
-                    window,
-                    cx,
-                );
-                m
+                }
             });
+            m = build_folder_level(
+                m,
+                None,
+                &sub_name_map,
+                &sub_children_map,
+                &on_select,
+                window,
+                cx,
+            );
+            m
+        });
 
         menu = menu.item(
-            PopupMenuItem::submenu(
-                t(I18nKey::AddToLibrary, lang),
-                add_library_submenu,
-            )
-            .icon(Icon::new(IconName::Plus)),
+            PopupMenuItem::submenu(t(I18nKey::AddToLibrary, lang), add_library_submenu)
+                .icon(Icon::new(IconName::Plus)),
         );
     }
 
@@ -246,9 +233,7 @@ pub(super) fn build_subscription_item_menu(
                     let app = this.read(cx).app.clone();
                     let mut hs = HashSet::new();
                     hs.insert(id.clone());
-                    if let Err(e) =
-                        app.smart_toggle_feed_items_read(&id, !is_read, &hs)
-                    {
+                    if let Err(e) = app.smart_toggle_feed_items_read(&id, !is_read, &hs) {
                         error!("更新已读状态失败: {e}");
                     }
                     this.update(cx, |this, cx| {

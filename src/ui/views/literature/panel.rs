@@ -5,15 +5,11 @@ use gpui::prelude::*;
 use services::app::MainApp;
 
 use gpui::{
-    AppContext, Entity, MouseButton, MouseDownEvent,
-    SharedString, UniformListScrollHandle, WeakEntity, Window, div, rems,
+    AppContext, Entity, MouseButton, MouseDownEvent, SharedString, UniformListScrollHandle,
+    WeakEntity, Window, div, rems,
 };
 use gpui_component::input::InputEvent;
-use gpui_component::{
-    Theme,
-    h_flex,
-    input::InputState,
-};
+use gpui_component::{Theme, h_flex, input::InputState};
 use i18n::{I18nKey, t};
 use log::{debug, info, warn};
 use models::{Folder, Tag};
@@ -437,4 +433,3 @@ impl LiteraturePanel {
             )
     }
 }
-

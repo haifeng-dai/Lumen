@@ -327,23 +327,23 @@ impl MainWindow {
         let app_ref: &mut App = cx;
 
         // 统一在外部进行 PopupMenu::build 构造，使用显式的 Window 和 App 引用
-        PopupMenu::build(window_ref, app_ref, move |menu, window, cx| {
-            match menu_type {
+        PopupMenu::build(
+            window_ref,
+            app_ref,
+            move |menu, window, cx| match menu_type {
                 ContextMenuType::Folder(target_id) => {
                     folder::build_folder_menu(menu, target_id, this_weak.clone(), lang, cx)
                 }
                 ContextMenuType::Tag(target_id) => {
                     tag::build_tag_menu(menu, target_id, this_weak.clone(), lang, cx)
                 }
-                ContextMenuType::Subscription(target_id) => {
-                    subscription::build_subscription_menu(
-                        menu,
-                        target_id,
-                        this_weak.clone(),
-                        lang,
-                        cx,
-                    )
-                }
+                ContextMenuType::Subscription(target_id) => subscription::build_subscription_menu(
+                    menu,
+                    target_id,
+                    this_weak.clone(),
+                    lang,
+                    cx,
+                ),
                 ContextMenuType::SubscriptionAll => {
                     subscription::build_subscription_all_menu(menu, this_weak.clone(), lang, cx)
                 }
@@ -360,29 +360,25 @@ impl MainWindow {
                         cx,
                     )
                 }
-                ContextMenuType::Attachment(att_id) => {
-                    attachment::build_attachment_menu(
-                        menu,
-                        att_id,
-                        attachment_lit_data,
-                        this_weak.clone(),
-                        lang,
-                        cx,
-                    )
-                }
-                ContextMenuType::Literature(lit_id) => {
-                    literature::build_literature_menu(
-                        menu,
-                        lit_id,
-                        literature_prefetch,
-                        current_selected_folder,
-                        window,
-                        this_weak.clone(),
-                        lang,
-                        cx,
-                    )
-                }
-            }
-        })
+                ContextMenuType::Attachment(att_id) => attachment::build_attachment_menu(
+                    menu,
+                    att_id,
+                    attachment_lit_data,
+                    this_weak.clone(),
+                    lang,
+                    cx,
+                ),
+                ContextMenuType::Literature(lit_id) => literature::build_literature_menu(
+                    menu,
+                    lit_id,
+                    literature_prefetch,
+                    current_selected_folder,
+                    window,
+                    this_weak.clone(),
+                    lang,
+                    cx,
+                ),
+            },
+        )
     }
 }

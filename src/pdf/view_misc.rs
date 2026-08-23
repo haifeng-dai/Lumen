@@ -1,12 +1,10 @@
 use ::components::{Side, render_resize_handle};
 use gpui::prelude::*;
 use gpui::{
-    Context, Entity, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, Window, deferred, div, px, rems,
+    Context, Entity, MouseMoveEvent, MouseUpEvent, Pixels, Point, Window, deferred, div, px, rems,
 };
-use gpui_component::menu::PopupMenu;
 use gpui_component::ActiveTheme;
-
+use gpui_component::menu::PopupMenu;
 
 use super::*;
 
@@ -33,7 +31,11 @@ impl super::PdfReaderView {
         }
     }
 
-    pub(crate) fn render_sidebar_resizer(&self, is_left: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_sidebar_resizer(
+        &self,
+        is_left: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (side, offset) = if is_left {
             (Side::Left, self.left_sidebar_width)
         } else {

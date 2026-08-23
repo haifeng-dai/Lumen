@@ -1,12 +1,10 @@
 use crate::app_state::data::DataStore;
-use crate::ui::{
-    components::muted_input,
-    views::main_window::MainWindow,
-};
+use crate::ui::{components::muted_input, views::main_window::MainWindow};
 use components::IconName;
 use gpui::prelude::*;
 use gpui::{
-    AnyWindowHandle, AsyncApp, Entity, FontWeight, SharedString, Task, WeakEntity, Window, div, rems,
+    AnyWindowHandle, AsyncApp, Entity, FontWeight, SharedString, Task, WeakEntity, Window, div,
+    rems,
 };
 use gpui_component::{
     ActiveTheme, Icon, ThemeMode,
@@ -213,7 +211,6 @@ impl LiteratureDetailView {
     // =========================================================================
     // Rendering helpers
     // =========================================================================
-
 }
 
 impl Render for LiteratureDetailView {

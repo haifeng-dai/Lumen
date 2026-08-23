@@ -3,15 +3,8 @@ use crate::ui::{
     views::main_window::{self},
 };
 use gpui::prelude::*;
-use gpui::{
-    FontWeight, div, rems,
-};
-use gpui_component::{
-    Theme,
-    h_flex,
-    label::Label,
-    v_flex,
-};
+use gpui::{FontWeight, div, rems};
+use gpui_component::{Theme, h_flex, label::Label, v_flex};
 use i18n::Language;
 use log::info;
 use models::ReadingStatus;
@@ -268,5 +261,4 @@ impl super::LiteratureDetailView {
         )
         .render(theme)
     }
-
 }

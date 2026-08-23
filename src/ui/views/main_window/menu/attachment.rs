@@ -55,23 +55,16 @@ pub(super) fn build_attachment_menu(
                         {
                             let result = (|| {
                                 let (lit_id, is_main, _) = cached_lit_data
-                                    .ok_or_else(|| {
-                                        anyhow!("Literature not found")
-                                    })?;
+                                    .ok_or_else(|| anyhow!("Literature not found"))?;
 
                                 if is_main {
-                                    app.import_file_to_literature(
-                                        &lit_id, &path, true,
-                                    )?;
+                                    app.import_file_to_literature(&lit_id, &path, true)?;
                                 } else {
                                     app.delete_attachment_file(&att_id)?;
-                                    app.import_file_to_literature(
-                                        &lit_id, &path, false,
-                                    )?;
+                                    app.import_file_to_literature(&lit_id, &path, false)?;
                                 }
                                 Ok::<(), Error>(())
-                            })(
-                            );
+                            })();
 
                             if let Err(e) = result {
                                 error!("更换文件失败: {e}");
@@ -161,10 +154,8 @@ pub(super) fn build_attachment_menu(
                                 .parent()
                                 .unwrap_or_else(|| std::path::Path::new("."));
 
-                            let receiver = cx.prompt_for_new_path(
-                                dir,
-                                Some(suggested_name.as_str()),
-                            );
+                            let receiver =
+                                cx.prompt_for_new_path(dir, Some(suggested_name.as_str()));
 
                             cx.spawn(move |cx: &mut AsyncApp| {
                                 let cx = cx.clone();
@@ -196,14 +187,14 @@ pub(super) fn build_attachment_menu(
                                     }
                                 }
                             })
-                        .detach();
+                            .detach();
 
-                        this.update(cx, |this, cx| {
-                            this.close_menus(cx);
-                        });
-                    }
-                }),
-        );
+                            this.update(cx, |this, cx| {
+                                this.close_menus(cx);
+                            });
+                        }
+                    }),
+            );
         }
     }
 

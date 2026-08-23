@@ -1,8 +1,8 @@
 use ::components::IconName;
 use gpui::prelude::*;
 use gpui::{
-    App, ClipboardItem, Context, DragMoveEvent, FocusHandle, Focusable,
-    KeyDownEvent, ListOffset, MouseButton, Render, Window, div, px, rems,
+    App, ClipboardItem, Context, DragMoveEvent, FocusHandle, Focusable, KeyDownEvent, ListOffset,
+    MouseButton, Render, Window, div, px, rems,
 };
 use gpui_component::{ActiveTheme, Icon, button::Button, h_flex, label::Label, v_flex};
 

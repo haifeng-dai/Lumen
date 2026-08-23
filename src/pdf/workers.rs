@@ -1,16 +1,12 @@
-use gpui::{
-    AsyncApp, Context, WeakEntity,
-};
-use services::pdf::{
-    Annotation, PdfResponse,
-};
+use gpui::{AsyncApp, Context, WeakEntity};
+use services::pdf::{Annotation, PdfResponse};
 
 use log::{debug, error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::*;
 use super::render::translate_outlines;
+use super::*;
 
 impl super::PdfReaderView {
     pub fn init_workers(

@@ -5,16 +5,9 @@ use crate::ui::{
     views::main_window::ContextMenuType,
 };
 use gpui::prelude::*;
-use gpui::{
-    DragMoveEvent, ExternalPaths, FontWeight,
-    MouseButton, Window, div, rems,
-};
+use gpui::{DragMoveEvent, ExternalPaths, FontWeight, MouseButton, Window, div, rems};
 use gpui_component::{
-    Theme, ThemeMode,
-    h_flex,
-    notification::NotificationType,
-    rating::Rating,
-    v_flex,
+    Theme, ThemeMode, h_flex, notification::NotificationType, rating::Rating, v_flex,
 };
 use i18n::{I18nKey, Language, t};
 use log::{error, info};

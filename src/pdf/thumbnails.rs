@@ -1,7 +1,5 @@
 use gpui::Context;
 
-
-
 impl super::PdfReaderView {
     pub(crate) fn select_thumbnail(&mut self, page: u16, cx: &mut Context<Self>) {
         self.selected_thumbnails.clear();

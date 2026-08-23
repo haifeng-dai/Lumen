@@ -3,9 +3,7 @@ use crate::app_state::theme::{ThemeLoaderState, surface};
 use components::IconName;
 use components::{muted_input, selector};
 use gpui::prelude::*;
-use gpui::{
-    AppContext, AsyncApp, Entity, MouseButton, SharedString, div, rems, transparent_black,
-};
+use gpui::{AppContext, AsyncApp, Entity, MouseButton, SharedString, div, rems, transparent_black};
 use gpui_component::{
     ActiveTheme, Icon,
     button::Button,

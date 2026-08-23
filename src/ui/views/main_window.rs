@@ -7,24 +7,21 @@ use crate::ui::{
         toolbar::ToolbarView,
     },
 };
-use gpui::{
-    Entity, EventEmitter,
-    Pixels, Point, Subscription, Window, actions, prelude::*,
-};
+use gpui::{Entity, EventEmitter, Pixels, Point, Subscription, Window, actions, prelude::*};
 use models::Literature;
 use services::app::MainApp;
 use std::sync::Arc;
 
 mod actions;
 mod batch;
-mod new;
-mod render;
-mod selection;
-mod toolbar;
 mod layout;
 mod menu;
 mod menus;
 mod modals;
+mod new;
+mod render;
+mod selection;
+mod toolbar;
 pub(crate) mod utils;
 pub use utils::render_separator;
 mod types;
@@ -103,7 +100,6 @@ pub struct MainWindow {
     left_width: Pixels,
     right_width: Pixels,
 }
-
 
 #[derive(Clone)]
 pub struct DraggedSidebar(pub components::Side);

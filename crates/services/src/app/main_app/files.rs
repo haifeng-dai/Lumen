@@ -5,10 +5,7 @@ use log::{debug, error, info, warn};
 use models::FetchSource;
 use models::config::AppConfig;
 use models::{Attachment, Literature};
-use std::{
-    path::Path,
-    process::Command,
-};
+use std::{path::Path, process::Command};
 use uuid::Uuid;
 
 use super::MainApp;
@@ -256,4 +253,3 @@ impl MainApp {
             .cleanup_orphaned_files(&self.db, &att_dir, |p| self.file_manager.trash_file(p))
     }
 }
-

@@ -499,8 +499,8 @@ impl PdfReaderView {
                     }
                 } else if let Some((page_index, local_x, local_y)) =
                     self.content_to_page_coords(event.position.x, event.position.y, window)
-                    && let Some(char_idx) =
-                        self.find_char_at_position(page_index, local_x, local_y, window)
+                    && let Some(char_idx) = self
+                        .find_selection_endpoint_at_position(page_index, local_x, local_y, window)
                 {
                     self.update_selection_end(page_index, char_idx, cx);
                 }
@@ -860,6 +860,9 @@ impl PdfReaderView {
         });
 
         let center_bucket = (search_y / bucket_height) as usize;
+        if center_bucket >= buckets.len() {
+            return None;
+        }
         let start_bucket = center_bucket.saturating_sub(1);
         let end_bucket = (center_bucket + 1).min(buckets.len().saturating_sub(1));
 
@@ -888,6 +891,62 @@ impl PdfReaderView {
         }
 
         best_idx
+    }
+
+    /// 查找拖选终点。直接命中文字时沿用精确命中；位于页边、行间或空白区时，
+    /// 吸附到该页最近的可见字符，使选区可以稳定地跨越页面边界。
+    fn find_selection_endpoint_at_position(
+        &mut self,
+        page_index: u16,
+        x: Pixels,
+        y: Pixels,
+        window: &Window,
+    ) -> Option<usize> {
+        if let Some(index) = self.find_char_at_position(page_index, x, y, window) {
+            return Some(index);
+        }
+
+        let text_data = self
+            .page_text_data
+            .get(page_index as usize)
+            .and_then(|data| data.as_ref())?;
+        let screen_x = f32::from(x);
+        let screen_y = f32::from(y);
+        let current_display_w =
+            PAGE_BASE_WIDTH_REMS * self.zoom_level * f32::from(window.rem_size());
+        let (search_x, search_y) = if (text_data.display_w - current_display_w).abs() > 0.001 {
+            let scale = text_data.display_w / current_display_w;
+            (screen_x * scale, screen_y * scale)
+        } else {
+            (screen_x, screen_y)
+        };
+
+        text_data
+            .chars
+            .iter()
+            .enumerate()
+            .filter(|(_, ch)| !ch.char.is_whitespace())
+            .min_by(|(_, left), (_, right)| {
+                let distance = |ch: &services::pdf::TextChar| {
+                    let dx = if search_x < ch.x {
+                        ch.x - search_x
+                    } else if search_x > ch.x + ch.width {
+                        search_x - ch.x - ch.width
+                    } else {
+                        0.0
+                    };
+                    let dy = if search_y < ch.y {
+                        ch.y - search_y
+                    } else if search_y > ch.y + ch.height {
+                        search_y - ch.y - ch.height
+                    } else {
+                        0.0
+                    };
+                    dx.mul_add(dx, dy * dy)
+                };
+                distance(left).total_cmp(&distance(right))
+            })
+            .map(|(index, _)| index)
     }
 
     pub(crate) fn update_selection(&mut self, cx: &mut Context<Self>) {

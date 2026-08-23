@@ -18,7 +18,11 @@ use translate;
 use super::{SettingsWindow, config_str, lang};
 
 impl SettingsWindow {
-    pub(super) fn translation_page(&self, app: Arc<MainApp>, cx: &mut Context<Self>) -> SettingPage {
+    pub(super) fn translation_page(
+        &self,
+        app: Arc<MainApp>,
+        cx: &mut Context<Self>,
+    ) -> SettingPage {
         let surface = surface(cx);
         let l = lang(cx);
         let engines: Vec<(SharedString, SharedString)> = [

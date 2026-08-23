@@ -29,17 +29,15 @@ use services::{
 };
 #[cfg(windows)]
 use std::os::windows::io::IntoRawHandle;
-use std::{
-    sync::{Arc, LazyLock, atomic::Ordering},
-};
+use std::sync::{Arc, LazyLock, atomic::Ordering};
 
 mod bootstrap;
 mod logging;
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use bootstrap::{notify_running_instance, start_socket_listener};
 #[cfg(target_os = "macos")]
 use bootstrap::set_mac_app_name;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use bootstrap::{notify_running_instance, start_socket_listener};
 use logging::{init_logger_with_path, setup_panic_hook, setup_stderr_redirection};
 
 fn main() {

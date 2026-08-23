@@ -2,8 +2,8 @@ use crate::feed::SubscriptionRefreshResult;
 use crate::runtime::RUNTIME;
 use anyhow::{Result, anyhow};
 use log::{debug, error, info, warn};
-use models::constructors::*;
 use models::FeedType;
+use models::constructors::*;
 use parser::normalize::*;
 use parser::text;
 use std::sync::Arc;
@@ -165,4 +165,3 @@ impl MainApp {
         Ok(lit_id)
     }
 }
-

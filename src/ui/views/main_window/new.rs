@@ -10,14 +10,9 @@ use crate::ui::{
         toolbar::ToolbarView,
     },
 };
-use gpui::{
-    AppContext, Entity, KeyBinding, ReadGlobal, Window, prelude::*, px,
-};
+use gpui::{AppContext, Entity, KeyBinding, ReadGlobal, Window, prelude::*, px};
 use services::notify::RefreshMsg;
-use services::{
-    app::MainApp,
-    sync::SyncStatus,
-};
+use services::{app::MainApp, sync::SyncStatus};
 use std::sync::Arc;
 
 use super::*;
@@ -234,5 +229,4 @@ impl super::MainWindow {
 
         main_window
     }
-
 }

@@ -1,10 +1,7 @@
-use gpui::{
-    FocusHandle, ListState,
-};
+use gpui::{FocusHandle, ListState};
 use gpui_component::menu::PopupMenu;
 use services::pdf::{
-    AnnotationState, PdfInitialState, PdfReaderDelegate, PdfService,
-    TextPageData,
+    AnnotationState, PdfInitialState, PdfReaderDelegate, PdfService, TextPageData,
 };
 
 use i18n::Language;
@@ -20,14 +17,14 @@ mod init;
 mod render;
 mod selection;
 mod text_format;
-pub(crate) mod types;
 mod thumbnails;
 mod translation;
+pub(crate) mod types;
 mod view_misc;
 mod workers;
 
-pub use types::*;
 pub(crate) use render::DraggedSidebar;
+pub use types::*;
 
 pub struct PdfReaderView {
     pub(crate) pdf_service: Arc<PdfService>,
