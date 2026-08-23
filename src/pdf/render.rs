@@ -447,8 +447,7 @@ impl Render for PdfReaderView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
-                                    this.dragging_pin = None;
-                                    this.resizing_pin = None;
+                                    this.handle_pin_mouse_up(cx);
                                     cx.notify();
                                 }),
                             ),

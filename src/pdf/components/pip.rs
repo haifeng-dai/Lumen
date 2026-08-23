@@ -27,6 +27,12 @@ pub struct PiPPin {
     pub image_source: Option<ImageSource>,
     /// 原始 RGBA 像素缓存（供剪贴板复制用）
     pub raw_image: Option<Arc<image::RgbaImage>>,
+    /// 当前 image_source 对应的实际渲染 scale
+    pub rendered_scale: f32,
+    /// 当前正在进行的渲染请求发出时的 scale（用于响应到达后正确更新 rendered_scale）
+    pub pending_scale: f32,
+    /// 是否已有渲染请求在进行中
+    pub render_pending: bool,
 }
 
 #[derive(Clone)]
@@ -255,7 +261,6 @@ impl super::super::PdfReaderView {
                 width: px(new_w),
                 height: px(new_h),
             };
-            pin.image_source = None;
 
             let page = pin.page;
             let pin_id = pin.id.clone();
@@ -263,6 +268,9 @@ impl super::super::PdfReaderView {
             let current_w = new_w;
             // 分辨率基于当前 CSS 尺寸，独立于 PDF zoom
             let scale = current_w * self.window_scale_factor * 1.2 / bbox_w.max(1.0);
+            pin.rendered_scale = scale;
+            pin.pending_scale = scale;
+            pin.render_pending = true;
             self.pdf_service.send_render_pin(page, pin_id, bbox, scale);
         }
     }

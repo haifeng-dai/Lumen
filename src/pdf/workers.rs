@@ -130,6 +130,10 @@ impl super::PdfReaderView {
                                             if let Some(pin) =
                                                 this.pins.iter_mut().find(|p| p.id == pin_id)
                                             {
+                                                // 使用 pending_scale 而非当前显示宽度，
+                                                // 避免响应到达时用户已继续拖拽导致 rendered_scale 偏差
+                                                pin.rendered_scale = pin.pending_scale;
+                                                pin.render_pending = false;
                                                 pin.raw_image = Some(Arc::new(image.clone()));
                                                 pin.image_source =
                                                     Some(helpers::make_image_source(image));

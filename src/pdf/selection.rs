@@ -32,6 +32,33 @@ impl PdfReaderView {
         }
     }
 
+    pub(crate) fn handle_pin_mouse_up(&mut self, _cx: &mut Context<Self>) {
+        if let Some(resize) = self.resizing_pin.take() {
+            if let Some(pin) = self.pins.iter_mut().find(|p| p.id == resize.pin_id) {
+                let bbox_w = (pin.bbox.2 - pin.bbox.0).max(1.0);
+                let current_w = f32::from(pin.size.width);
+                // 基础缩放倍率 = 当前宽度 / bbox 原始宽度
+                let raw_zoom = current_w / bbox_w;
+                // 使用主界面的量化桶 quantize_render_zoom
+                let quantized_zoom = crate::pdf::types::quantize_render_zoom(raw_zoom);
+                let target_scale = quantized_zoom * self.window_scale_factor * 1.2;
+
+                // 只有当跨越了量化桶（即 target_scale 与当前 rendered_scale 不一致）时才触发重绘
+                if (target_scale - pin.rendered_scale).abs() > f32::EPSILON {
+                    pin.pending_scale = target_scale;
+                    pin.render_pending = true;
+                    self.pdf_service.send_render_pin(
+                        pin.page,
+                        pin.id.clone(),
+                        pin.bbox,
+                        target_scale,
+                    );
+                }
+            }
+        }
+        self.dragging_pin = None;
+    }
+
     pub(crate) fn handle_pin_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -69,17 +96,7 @@ impl PdfReaderView {
                     width: px(new_w),
                     height: px(new_h),
                 };
-                pin.image_source = None;
-                let page = pin.page;
-                let pin_id = pin.id.clone();
-                let bbox = pin.bbox;
-                let current_w = new_w;
                 cx.notify();
-
-                // 发送独立于 PDF zoom 的渲染请求
-                let bbox_w = (bbox.2 - bbox.0).max(1.0);
-                let scale = current_w * self.window_scale_factor * 1.2 / bbox_w;
-                self.pdf_service.send_render_pin(page, pin_id, bbox, scale);
             }
         } else if let Some(ref drag) = self.dragging_pin.clone() {
             if let Some(pin) = self.pins.iter_mut().find(|p| p.id == drag.pin_id) {
@@ -706,9 +723,11 @@ impl PdfReaderView {
                     let pin_id = Uuid::new_v4().to_string();
                     let bbox = (bx0, by0, bx1, by1);
 
-                    // 发送首次渲染请求（分辨率基于缩减后的物理尺寸）
+                    // 发送首次渲染请求（分辨率基于量化桶）
                     let bbox_w = (bx1 - bx0).max(1.0);
-                    let render_scale = final_w * self.window_scale_factor * 1.2 / bbox_w;
+                    let raw_zoom = final_w / bbox_w;
+                    let quantized_zoom = crate::pdf::types::quantize_render_zoom(raw_zoom);
+                    let render_scale = quantized_zoom * self.window_scale_factor * 1.2;
                     self.pdf_service
                         .send_render_pin(page, pin_id.clone(), bbox, render_scale);
 
@@ -724,6 +743,9 @@ impl PdfReaderView {
                         },
                         image_source: img_src,
                         raw_image: None,
+                        rendered_scale: render_scale,
+                        pending_scale: render_scale,
+                        render_pending: true,
                     };
                     self.pins.push(pin);
                     self.annotation_state.active_tool = services::pdf::AnnotationTool::Select;
@@ -1373,7 +1395,9 @@ impl PdfReaderView {
 
         let pin_id = Uuid::new_v4().to_string();
         let bbox_w = (bx1 - bx0).max(1.0);
-        let render_scale = final_w * self.window_scale_factor * 1.2 / bbox_w;
+        let raw_zoom = final_w / bbox_w;
+        let quantized_zoom = crate::pdf::types::quantize_render_zoom(raw_zoom);
+        let render_scale = quantized_zoom * self.window_scale_factor * 1.2;
         self.pdf_service
             .send_render_pin(page, pin_id.clone(), bbox, render_scale);
 
@@ -1388,6 +1412,9 @@ impl PdfReaderView {
             },
             image_source: img_src,
             raw_image: None,
+            rendered_scale: render_scale,
+            pending_scale: render_scale,
+            render_pending: true,
         };
         self.pins.push(pin);
     }
