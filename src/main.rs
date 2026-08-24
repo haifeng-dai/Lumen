@@ -27,8 +27,6 @@ use services::{
     file_monitor::{FileEvent, FileMonitorService},
     query::data::{AppViewMode, SortField, SortOrder},
 };
-#[cfg(windows)]
-use std::os::windows::io::IntoRawHandle;
 use std::sync::{Arc, LazyLock, atomic::Ordering};
 
 mod bootstrap;

@@ -3,6 +3,8 @@ use log::{LevelFilter, error, info, logger};
 use models::config::AppConfig;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(windows)]
+use std::os::windows::io::IntoRawHandle;
 use std::{
     fs::{OpenOptions, create_dir_all},
     io::Write,
@@ -10,11 +12,12 @@ use std::{
     path::Path,
 };
 
+#[cfg(unix)]
 pub(crate) fn setup_stderr_redirection(log_path: &std::path::Path) {
     if let Ok(file) = OpenOptions::new().create(true).append(true).open(log_path) {
         let fd = file.as_raw_fd();
         unsafe {
-            libc::dup2(fd, libc::STDERR_FILENO);
+            libc::dup2(fd, 2);
         }
         info!("系统 stderr 已合并重定向至应用日志文件");
     } else {
@@ -27,8 +30,6 @@ pub(crate) fn setup_stderr_redirection(log_path: &std::path::Path) {
     if let Ok(file) = OpenOptions::new().create(true).append(true).open(log_path) {
         unsafe {
             let handle = file.into_raw_handle();
-            // 0 is typically text mode, usually safe for logs. O_APPEND equivalent might be needed if not implicit?
-            // Windows CRT append mode behavior with fd open might vary, but we opened the file with append option.
             let fd = libc::open_osfhandle(handle as isize, 0);
             if fd != -1 {
                 libc::dup2(fd, 2); // 2 is stderr
