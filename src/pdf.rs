@@ -64,6 +64,10 @@ pub struct PdfReaderView {
     // 程序化滚动（缩放/恢复等），跳过当前帧的页面跟踪覆写
     pub(crate) programmatic_scroll: bool,
 
+    // 阅读状态保存防抖：交互只标脏，防抖定时器静默到期后统一落盘
+    pub(crate) state_save_dirty: bool,
+    pub(crate) state_save_scheduled: bool,
+
     // 选择状态
     pub(crate) is_mouse_down: bool,
     pub(crate) mouse_down_pos: Option<gpui::Point<gpui::Pixels>>,

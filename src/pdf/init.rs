@@ -205,6 +205,8 @@ impl super::PdfReaderView {
             }),
             last_content_width: 0.0,
             programmatic_scroll: false,
+            state_save_dirty: false,
+            state_save_scheduled: false,
             annotation_state: AnnotationState::default(),
             annotation_version: 0,
             last_composited_version: 0,

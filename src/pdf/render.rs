@@ -145,7 +145,7 @@ impl Render for PdfReaderView {
                 let page_changed = self.current_page != new_page;
                 self.current_page = new_page;
                 self.current_offset_y = new_offset_y;
-                self.save_current_state(Some(cx));
+                self.request_state_save(cx);
 
                 if page_changed && self.is_left_sidebar_open {
                     let thumbnail_scroll = self.thumbnail_list_state.logical_scroll_top();
@@ -318,7 +318,7 @@ impl Render for PdfReaderView {
                             .min(final_max);
                         this.preferred_right_sidebar_width = f32::from(this.right_sidebar_width);
                     }
-                    this.save_current_state(Some(cx));
+                    this.request_state_save(cx);
                     cx.notify();
                 },
             ))

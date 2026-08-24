@@ -18,7 +18,7 @@ pub const ZOOM_MAX: f32 = 5.0;
 impl PdfReaderView {
     pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         self.zoom_level = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
-        self.save_current_state(Some(cx));
+        self.request_state_save(cx);
         let new_render_zoom = quantize_render_zoom(self.zoom_level);
         if (self.render_zoom - new_render_zoom).abs() > f32::EPSILON {
             self.render_zoom = new_render_zoom;
@@ -288,6 +288,34 @@ impl PdfReaderView {
             offset_in_item: px(offset_in_item),
         });
         cx.notify();
+    }
+
+    /// 请求保存阅读状态（防抖）：交互期间只标脏，由唯一的防抖定时器
+    /// 在静默 `STATE_SAVE_DEBOUNCE_MS` 后统一落盘，避免每帧同步 SQLite I/O。
+    /// 视图销毁前的强一致保存请直接用 `save_current_state(None)`。
+    pub(crate) fn request_state_save(&mut self, cx: &mut Context<Self>) {
+        self.state_save_dirty = true;
+        if self.state_save_scheduled {
+            return;
+        }
+        self.state_save_scheduled = true;
+        let executor = cx.background_executor().clone();
+        cx.spawn(async move |this, cx| {
+            executor
+                .timer(std::time::Duration::from_millis(
+                    crate::pdf::types::STATE_SAVE_DEBOUNCE_MS,
+                ))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.state_save_scheduled = false;
+                if !this.state_save_dirty {
+                    return;
+                }
+                this.state_save_dirty = false;
+                this.save_current_state(Some(cx));
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn save_current_state(&self, cx: Option<&mut Context<Self>>) {

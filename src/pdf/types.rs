@@ -71,6 +71,12 @@ pub const AUTO_FIT_PADDING_PX: f32 = 48.0;
 /// 渲染缩放等级桶。渲染时取 ≥ 当前显示缩放的最接近桶值。
 pub const RENDER_ZOOM_BUCKETS: &[f32] = &[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
 
+// ── 阅读状态保存防抖 ──────────────────────────────────
+/// 滚动/缩放等交互后，延迟落盘的去抖间隔（毫秒）。
+/// 连续交互期间只标脏，静默达到该时长后才统一写一次，
+/// 避免每帧同步 SQLite I/O 造成的 UI 卡顿。
+pub const STATE_SAVE_DEBOUNCE_MS: u64 = 1000;
+
 /// 将显示缩放量化为渲染缩放：取 ≥ zoom 的最小桶值
 pub fn quantize_render_zoom(zoom: f32) -> f32 {
     RENDER_ZOOM_BUCKETS

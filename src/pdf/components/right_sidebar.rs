@@ -316,7 +316,7 @@ impl PdfReaderView {
                                             })
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.auto_translate = !this.auto_translate;
-                                                this.save_current_state(Some(cx));
+                                                this.request_state_save(cx);
                                                 cx.notify();
                                             })),
                                     )
