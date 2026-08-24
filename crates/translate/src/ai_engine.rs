@@ -84,10 +84,18 @@ impl TranslationBackend for AiTranslateBackend {
             );
 
             let messages = vec![ai::ChatMessage::user(format!(
-                "将以下学术文本翻译为{lang_name}，保持学术风格和专业术语准确性，只返回翻译结果：\n\n{text}"
+                "将以下学术文本翻译为{lang_name}，将其中的所有数学公式、希腊字母、变量与符号均转换为 Markdown LaTeX 格式，只返回翻译结果：\n\n{text}"
             ))];
 
-            let system_prompt = "你是一个学术翻译助手。必须遵守以下规则：\n1. 保持原意、学术风格和术语准确性；\n2. 只返回翻译结果，不要添加任何解释或额外内容；\n3. 禁止使用 'Here is the translation'、'翻译如下' 等引导语；\n4. 不要重复原文，直接输出翻译。";
+            let system_prompt = "你是一个学术翻译助手。请将用户提供的学术文本翻译为指定语言，并严格遵守以下规则：\n\
+1. 保持原意、严谨的学术风格和专业术语准确性；\n\
+2. 【公式与符号转 Markdown/LaTeX】：\n\
+   - 自动识别并转换所有希腊字母（如 alpha -> $\\alpha$、beta -> $\\beta$、theta -> $\\theta$、lambda -> $\\lambda$ 等）；\n\
+   - 自动识别并转换所有数学变量、参数、带上下标表达式（如 x_i -> $x_i$、y^{t-1} -> $y^{t-1}$、f(x) -> $f(x)$）；\n\
+   - 自动识别数学关系符与算子（如 in -> $\\in$、approx -> $\\approx$、sum -> $\\sum$）；\n\
+   - 单个变量或希腊字母在正文中也必须使用行内公式 $...$ 包裹，独立公式使用 $$...$$ 包裹，严禁遗漏；\n\
+3. 【输出格式】：使用标准 Markdown 格式输出；\n\
+4. 【纯净输出】：只返回翻译正文，严禁添加任何前后缀或引导解释（如禁止输出'翻译如下：'等）。";
 
             debug!("AiTranslateBackend::translate: 调用 AiService::chat...");
             match service.chat(&messages, Some(system_prompt)).await {

@@ -99,6 +99,8 @@ pub struct PdfReaderView {
     pub(crate) translation_font_size: f32,
     pub(crate) auto_translate: bool,
     pub(crate) append_translation_mode: bool,
+    pub(crate) copied_translation_original: bool,
+    pub(crate) copied_translation_result: bool,
 
     pub(crate) document_id: String,
     pub(crate) document_path: PathBuf,

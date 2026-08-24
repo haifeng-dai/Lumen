@@ -315,14 +315,17 @@ impl super::LiteratureDetailView {
                                             }
                                         }),
                                     )
-                                    .on_double_click({
+                                    .on_double_click(cx.listener({
                                         let val = abstract_text.clone();
-                                        move |_, _, cx| {
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        move |this, _, window, cx| {
+                                            this.copy_text(
                                                 val.clone(),
-                                            ));
+                                                "abstract".to_string(),
+                                                window.window_handle(),
+                                                cx,
+                                            );
                                         }
-                                    })
+                                    }))
                                     .render(theme),
                                 )
                             })

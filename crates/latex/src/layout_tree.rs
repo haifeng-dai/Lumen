@@ -8,6 +8,8 @@ pub enum MathNode {
         text: String,
         font_size: Pixels,
         position: Point<Pixels>,
+        font_family: Option<&'static str>,
+        is_italic: bool,
     },
     /// 字体字形图元（专用数学字体字形 ID）
     Glyph {

@@ -180,6 +180,8 @@ impl super::PdfReaderView {
             translation_font_size: initial_state.translation_font_size,
             auto_translate: use_auto_translate,
             append_translation_mode: false,
+            copied_translation_original: false,
+            copied_translation_result: false,
 
             preferred_left_sidebar_width: if use_left_sidebar_width > 0.0 {
                 use_left_sidebar_width

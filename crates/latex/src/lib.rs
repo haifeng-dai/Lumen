@@ -8,7 +8,7 @@ pub use element::MathElement;
 pub use engine::MathEngine;
 pub use font::{KATEX_MAIN_FONT, KATEX_MATH_FONT};
 pub use layout_tree::{LayoutResult, MathNode};
-pub use symbols::lookup_symbol;
+pub use symbols::{is_function_operator, lookup_symbol};
 
 #[cfg(test)]
 mod tests {

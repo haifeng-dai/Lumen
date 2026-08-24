@@ -708,3 +708,8 @@ fn lookup_alphanumeric_and_special(command: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+/// 判断是否为数学标准函数/算子名（如 arg, max, min, sin, cos 等，严格使用 KaTeX_Main 正体）
+pub fn is_function_operator(command: &str) -> bool {
+    lookup_function_operator(command).is_some()
+}

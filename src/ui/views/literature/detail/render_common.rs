@@ -51,7 +51,7 @@ impl super::LiteratureDetailView {
                 (
                     ReadingStatus::ToRead,
                     "ToRead",
-                    gpui::rgb(0xeab308).into(),
+                    gpui::rgb(0xef4444).into(),
                     to_read_label,
                 ),
                 (
@@ -63,7 +63,7 @@ impl super::LiteratureDetailView {
                 (
                     ReadingStatus::Read,
                     "Read",
-                    gpui::rgb(0xef4444).into(),
+                    gpui::rgb(0xeab308).into(),
                     read_label,
                 ),
             ]
@@ -138,14 +138,19 @@ impl super::LiteratureDetailView {
     ) -> impl IntoElement {
         div()
             .id("lit-title-wrapper")
-            .on_click({
+            .on_click(cx.listener({
                 let title = title.to_string();
-                move |event, _, cx| {
+                move |this, event: &gpui::ClickEvent, window, cx| {
                     if event.click_count() == 2 {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(title.clone()));
+                        this.copy_text(
+                            title.clone(),
+                            "title".to_string(),
+                            window.window_handle(),
+                            cx,
+                        );
                     }
                 }
-            })
+            }))
             .child(
                 v_flex()
                     .group("row_group")

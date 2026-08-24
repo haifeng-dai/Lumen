@@ -57,6 +57,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(7.0 * scale);
                         }
@@ -68,6 +70,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(7.0 * scale);
                         }
@@ -79,6 +83,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(8.0 * scale);
                         }
@@ -93,6 +99,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(8.0 * scale);
                         }
@@ -216,8 +224,8 @@ impl MathEngine {
                     let body_layout = Self::layout(&body_content, text_size, false)?;
 
                     let content_h = body_layout.height.max(px(14.0 * scale));
-                    let delim_font_size = (content_h * 1.05).max(text_size);
-                    let baseline_shift = -content_h / 2.0 + px(4.5 * scale);
+                    let delim_font_size = (text_size * 1.35).min(content_h * 0.9).max(text_size);
+                    let baseline_shift = px(1.0 * scale) - (delim_font_size - text_size) * 0.35;
 
                     // 绘制左定界符
                     if !left_delim.is_empty() {
@@ -228,8 +236,10 @@ impl MathEngine {
                                 x: cursor_x,
                                 y: baseline_shift,
                             },
+                            font_family: Some(crate::font::KATEX_MAIN_FONT),
+                            is_italic: false,
                         });
-                        cursor_x += px(7.0 * scale) + (delim_font_size - text_size) * 0.15;
+                        cursor_x += px(6.5 * scale);
                     }
 
                     let content_start_x = cursor_x;
@@ -239,6 +249,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } => {
                                 nodes.push(MathNode::Text {
                                     text,
@@ -247,6 +259,8 @@ impl MathEngine {
                                         x: content_start_x + position.x,
                                         y: position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                             MathNode::Glyph {
@@ -288,8 +302,10 @@ impl MathEngine {
                                 x: cursor_x,
                                 y: baseline_shift,
                             },
+                            font_family: Some(crate::font::KATEX_MAIN_FONT),
+                            is_italic: false,
                         });
-                        cursor_x += px(7.0 * scale) + (delim_font_size - text_size) * 0.15;
+                        cursor_x += px(6.5 * scale);
                     }
 
                     max_y = max_y.max(body_layout.height.max(baseline_shift + delim_font_size));
@@ -451,6 +467,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: baseline_shift - px(2.0 * sub_scale),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(10.0 * sub_scale);
                         }
@@ -483,6 +501,8 @@ impl MathEngine {
                                             text,
                                             font_size,
                                             position,
+                                            font_family,
+                                            is_italic,
                                         } => {
                                             nodes.push(MathNode::Text {
                                                 text,
@@ -491,6 +511,8 @@ impl MathEngine {
                                                     x: cell_offset_x + position.x,
                                                     y: current_y + position.y,
                                                 },
+                                                font_family,
+                                                is_italic,
                                             });
                                         }
                                         MathNode::Glyph {
@@ -538,6 +560,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: baseline_shift - px(2.0 * sub_scale),
                                 },
+                                font_family: Some(crate::font::KATEX_MAIN_FONT),
+                                is_italic: false,
                             });
                             cursor_x += px(10.0 * sub_scale);
                         }
@@ -546,6 +570,247 @@ impl MathEngine {
                         min_y = min_y.min(baseline_shift);
                         continue;
                     }
+                }
+
+                // 大算子解析（\sum, \prod, \int, \iint, \oint, \bigcup, \bigcap 等，支持上下限对齐）
+                let is_large_op = match cmd.as_str() {
+                    "sum" | "prod" | "coprod" | "int" | "iint" | "iiint" | "oint" | "bigcup"
+                    | "bigcap" | "bigoplus" | "bigotimes" | "bigvee" | "bigwedge" => true,
+                    _ => false,
+                };
+
+                if is_large_op {
+                    let op_symbol = match cmd.as_str() {
+                        "sum" => "∑",
+                        "prod" => "∏",
+                        "coprod" => "∐",
+                        "int" => "∫",
+                        "iint" => "∬",
+                        "iiint" => "∭",
+                        "oint" => "∮",
+                        "bigcup" => "⋃",
+                        "bigcap" => "⋂",
+                        "bigoplus" => "⨁",
+                        "bigotimes" => "⨂",
+                        "bigvee" => "⋁",
+                        "bigwedge" => "⋀",
+                        _ => "∑",
+                    };
+
+                    let is_integral = cmd.contains("int");
+                    let mut lower_content: Option<String> = None;
+                    let mut upper_content: Option<String> = None;
+
+                    // 循环读取可能紧随出现的 _{lower} 和 ^{upper}
+                    while i < chars.len() {
+                        while i < chars.len() && chars[i].is_whitespace() {
+                            i += 1;
+                        }
+                        if i < chars.len() && (chars[i] == '_' || chars[i] == '^') {
+                            let is_sup = chars[i] == '^';
+                            i += 1;
+                            while i < chars.len() && chars[i].is_whitespace() {
+                                i += 1;
+                            }
+                            let mut content = String::new();
+                            if i < chars.len() && chars[i] == '{' {
+                                i += 1;
+                                let s_start = i;
+                                let mut depth = 1;
+                                while i < chars.len() && depth > 0 {
+                                    if chars[i] == '{' {
+                                        depth += 1;
+                                    } else if chars[i] == '}' {
+                                        depth -= 1;
+                                    }
+                                    i += 1;
+                                }
+                                content = chars[s_start..i - 1].iter().collect();
+                            } else if i < chars.len() {
+                                content.push(chars[i]);
+                                i += 1;
+                            }
+                            if is_sup {
+                                upper_content = Some(content);
+                            } else {
+                                lower_content = Some(content);
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let limit_size = px(f32::from(text_size) * 0.72);
+                    let lower_layout = if let Some(ref l) = lower_content {
+                        Self::layout(l, limit_size, false).ok()
+                    } else {
+                        None
+                    };
+                    let upper_layout = if let Some(ref u) = upper_content {
+                        Self::layout(u, limit_size, false).ok()
+                    } else {
+                        None
+                    };
+
+                    let op_scale = if is_display { 1.35 } else { 1.15 };
+                    let op_font_size = px(f32::from(text_size) * op_scale);
+                    let op_width = px(if is_integral { 8.5 } else { 13.0 } * scale * op_scale);
+
+                    if is_display && !is_integral {
+                        // Display 模式下的求和/乘积：上下界居中放置在算子正上方和正下方
+                        let lower_w = lower_layout.as_ref().map(|l| l.width).unwrap_or(px(0.0));
+                        let upper_w = upper_layout.as_ref().map(|l| l.width).unwrap_or(px(0.0));
+                        let total_w = op_width.max(lower_w).max(upper_w) + px(4.0 * scale);
+
+                        let op_x = cursor_x + (total_w - op_width) / 2.0;
+                        let op_y = px(0.0);
+
+                        // 放置算子本体
+                        nodes.push(MathNode::Text {
+                            text: op_symbol.to_string(),
+                            font_size: op_font_size,
+                            position: Point { x: op_x, y: op_y },
+                            font_family: Some(crate::font::KATEX_MAIN_FONT),
+                            is_italic: false,
+                        });
+
+                        // 放置上界（正上方）
+                        if let Some(upper) = upper_layout {
+                            let upper_x = cursor_x + (total_w - upper.width) / 2.0;
+                            let upper_y = px(12.0 * scale);
+                            for node in upper.nodes {
+                                if let MathNode::Text {
+                                    text,
+                                    font_size,
+                                    position,
+                                    font_family,
+                                    is_italic,
+                                } = node
+                                {
+                                    nodes.push(MathNode::Text {
+                                        text,
+                                        font_size,
+                                        position: Point {
+                                            x: upper_x + position.x,
+                                            y: upper_y + position.y,
+                                        },
+                                        font_family,
+                                        is_italic,
+                                    });
+                                }
+                            }
+                            max_y = max_y.max(upper_y + upper.height);
+                        }
+
+                        // 放置下界（正下方）
+                        if let Some(lower) = lower_layout {
+                            let lower_x = cursor_x + (total_w - lower.width) / 2.0;
+                            let lower_y = -px(10.0 * scale);
+                            for node in lower.nodes {
+                                if let MathNode::Text {
+                                    text,
+                                    font_size,
+                                    position,
+                                    font_family,
+                                    is_italic,
+                                } = node
+                                {
+                                    nodes.push(MathNode::Text {
+                                        text,
+                                        font_size,
+                                        position: Point {
+                                            x: lower_x + position.x,
+                                            y: lower_y + position.y,
+                                        },
+                                        font_family,
+                                        is_italic,
+                                    });
+                                }
+                            }
+                            min_y = min_y.min(lower_y - lower.depth);
+                        }
+
+                        cursor_x += total_w + px(2.5 * scale);
+                        max_y = max_y.max(op_font_size);
+                    } else {
+                        // 积分或行内模式：算子在左，上下界以角标排在右侧
+                        nodes.push(MathNode::Text {
+                            text: op_symbol.to_string(),
+                            font_size: op_font_size,
+                            position: Point {
+                                x: cursor_x,
+                                y: if is_integral {
+                                    -px(2.0 * scale)
+                                } else {
+                                    px(0.0)
+                                },
+                            },
+                            font_family: Some(crate::font::KATEX_MAIN_FONT),
+                            is_italic: false,
+                        });
+                        cursor_x += op_width + px(1.0 * scale);
+
+                        let script_start_x = cursor_x;
+                        let mut max_script_w = px(0.0);
+
+                        if let Some(upper) = upper_layout {
+                            let upper_y = px(8.0 * scale);
+                            for node in upper.nodes {
+                                if let MathNode::Text {
+                                    text,
+                                    font_size,
+                                    position,
+                                    font_family,
+                                    is_italic,
+                                } = node
+                                {
+                                    nodes.push(MathNode::Text {
+                                        text,
+                                        font_size,
+                                        position: Point {
+                                            x: script_start_x + position.x,
+                                            y: upper_y + position.y,
+                                        },
+                                        font_family,
+                                        is_italic,
+                                    });
+                                }
+                            }
+                            max_script_w = max_script_w.max(upper.width);
+                            max_y = max_y.max(upper_y + upper.height);
+                        }
+
+                        if let Some(lower) = lower_layout {
+                            let lower_y = -px(5.5 * scale);
+                            for node in lower.nodes {
+                                if let MathNode::Text {
+                                    text,
+                                    font_size,
+                                    position,
+                                    font_family,
+                                    is_italic,
+                                } = node
+                                {
+                                    nodes.push(MathNode::Text {
+                                        text,
+                                        font_size,
+                                        position: Point {
+                                            x: script_start_x + position.x,
+                                            y: lower_y + position.y,
+                                        },
+                                        font_family,
+                                        is_italic,
+                                    });
+                                }
+                            }
+                            max_script_w = max_script_w.max(lower.width);
+                            min_y = min_y.min(lower_y - lower.depth);
+                        }
+
+                        cursor_x += max_script_w + px(2.5 * scale);
+                        max_y = max_y.max(op_font_size);
+                    }
+                    continue;
                 }
 
                 // 分式解析：\frac{numerator}{denominator}
@@ -621,6 +886,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } => {
                                 nodes.push(MathNode::Text {
                                     text,
@@ -629,6 +896,8 @@ impl MathEngine {
                                         x: num_offset_x + position.x,
                                         y: num_offset_y + position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                             MathNode::Glyph {
@@ -669,6 +938,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } => {
                                 nodes.push(MathNode::Text {
                                     text,
@@ -677,6 +948,8 @@ impl MathEngine {
                                         x: den_offset_x + position.x,
                                         y: den_offset_y + position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                             MathNode::Glyph {
@@ -776,6 +1049,8 @@ impl MathEngine {
                                     text,
                                     font_size,
                                     position,
+                                    font_family,
+                                    is_italic,
                                 } = node
                                 {
                                     nodes.push(MathNode::Text {
@@ -785,6 +1060,8 @@ impl MathEngine {
                                             x: idx_offset_x + position.x,
                                             y: idx_offset_y + position.y,
                                         },
+                                        font_family,
+                                        is_italic,
                                     });
                                 }
                             }
@@ -800,6 +1077,8 @@ impl MathEngine {
                             x: cursor_x,
                             y: px(0.0),
                         },
+                        font_family: Some(crate::font::KATEX_MAIN_FONT),
+                        is_italic: false,
                     });
 
                     let body_start_x = cursor_x + sqrt_hook_width;
@@ -823,6 +1102,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } => {
                                 nodes.push(MathNode::Text {
                                     text,
@@ -831,6 +1112,8 @@ impl MathEngine {
                                         x: body_start_x + position.x,
                                         y: position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                             MathNode::Glyph {
@@ -917,6 +1200,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } => {
                                 nodes.push(MathNode::Text {
                                     text,
@@ -925,6 +1210,8 @@ impl MathEngine {
                                         x: cursor_x + position.x,
                                         y: position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                             MathNode::Glyph {
@@ -979,6 +1266,8 @@ impl MathEngine {
                                 x: accent_offset_x,
                                 y: accent_y,
                             },
+                            font_family: Some(crate::font::KATEX_MAIN_FONT),
+                            is_italic: false,
                         });
                     }
 
@@ -1042,6 +1331,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_AMS_FONT),
+                                is_italic: false,
                             });
                             cursor_x += sym_width;
                             continue;
@@ -1057,6 +1348,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_CALIGRAPHIC_FONT),
+                                is_italic: false,
                             });
                             cursor_x += sym_width;
                             continue;
@@ -1080,6 +1373,8 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_FRAKTUR_FONT),
+                                is_italic: false,
                             });
                             cursor_x += sym_width;
                             continue;
@@ -1103,13 +1398,25 @@ impl MathEngine {
                                     x: cursor_x,
                                     y: px(0.0),
                                 },
+                                font_family: Some(crate::font::KATEX_SCRIPT_FONT),
+                                is_italic: false,
                             });
                             cursor_x += sym_width;
                             continue;
                         }
                     }
 
-                    // 递归排版 body 文本内容
+                    // 递归排版 body 文本内容（如果是 \mathrm, \text, \mathbf 则统一定制样式）
+                    let force_font = match cmd.as_str() {
+                        "mathrm" | "text" => Some(crate::font::KATEX_MAIN_FONT),
+                        "mathbf" | "boldsymbol" | "bm" => Some(crate::font::KATEX_BOLD_FONT),
+                        _ => None,
+                    };
+                    let force_italic = match cmd.as_str() {
+                        "mathrm" | "text" | "mathbf" => Some(false),
+                        _ => None,
+                    };
+
                     if let Ok(body_layout) = Self::layout(&body, text_size, false) {
                         for node in body_layout.nodes {
                             match node {
@@ -1117,6 +1424,8 @@ impl MathEngine {
                                     text,
                                     font_size,
                                     position,
+                                    font_family,
+                                    is_italic,
                                 } => {
                                     nodes.push(MathNode::Text {
                                         text,
@@ -1125,6 +1434,8 @@ impl MathEngine {
                                             x: cursor_x + position.x,
                                             y: position.y,
                                         },
+                                        font_family: force_font.or(font_family),
+                                        is_italic: force_italic.unwrap_or(is_italic),
                                     });
                                 }
                                 MathNode::Glyph {
@@ -1161,9 +1472,20 @@ impl MathEngine {
                     }
                 }
 
-                // 常规符号替换
+                // 常规符号与函数算子替换（严格区分正体算子与斜体希腊/拉丁符号）
                 if let Some(sym) = Self::map_latex_symbol(&cmd) {
-                    let sym_width = px(9.5 * scale);
+                    let is_op = crate::symbols::is_function_operator(&cmd);
+                    let is_greek = !is_op
+                        && sym.chars().all(|c| c.is_alphabetic())
+                        && sym.chars().count() <= 2;
+                    let char_count = sym.chars().count() as f32;
+                    let is_multi_char = char_count > 1.0;
+                    let sym_width = px(8.5 * scale * char_count)
+                        + if is_multi_char {
+                            px(4.0 * scale)
+                        } else {
+                            px(1.0 * scale)
+                        };
                     nodes.push(MathNode::Text {
                         text: sym.to_string(),
                         font_size: text_size,
@@ -1171,10 +1493,16 @@ impl MathEngine {
                             x: cursor_x,
                             y: px(0.0),
                         },
+                        font_family: Some(if is_greek {
+                            crate::font::KATEX_MATH_FONT
+                        } else {
+                            crate::font::KATEX_MAIN_FONT
+                        }),
+                        is_italic: is_greek,
                     });
                     cursor_x += sym_width;
                 } else {
-                    // 未知命令直接作为文本
+                    // 未知命令直接作为文本（Roman 正体）
                     let txt_width = px(8.0 * scale * cmd.len() as f32);
                     nodes.push(MathNode::Text {
                         text: cmd,
@@ -1183,6 +1511,8 @@ impl MathEngine {
                             x: cursor_x,
                             y: px(0.0),
                         },
+                        font_family: Some(crate::font::KATEX_MAIN_FONT),
+                        is_italic: false,
                     });
                     cursor_x += txt_width;
                 }
@@ -1236,6 +1566,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } = node
                             {
                                 nodes.push(MathNode::Text {
@@ -1245,6 +1577,8 @@ impl MathEngine {
                                         x: cursor_x + position.x,
                                         y: sup_y + position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                         }
@@ -1262,6 +1596,8 @@ impl MathEngine {
                                 text,
                                 font_size,
                                 position,
+                                font_family,
+                                is_italic,
                             } = node
                             {
                                 nodes.push(MathNode::Text {
@@ -1271,6 +1607,8 @@ impl MathEngine {
                                         x: cursor_x + position.x,
                                         y: sub_y + position.y,
                                     },
+                                    font_family,
+                                    is_italic,
                                 });
                             }
                         }
@@ -1289,20 +1627,29 @@ impl MathEngine {
                 continue;
             }
 
-            // 单个字符
-            let char_width = if "=+-*/<>".contains(ch) {
-                px(10.0 * scale)
+            // 单个字符排版（关系符与二元运算符两侧预留标准数学间距，英文字母使用 Math 斜体，数字与标点使用 Main 正体）
+            let is_letter = ch.is_ascii_alphabetic();
+            let (char_width, offset_x) = if "=+-*/<>,:;".contains(ch) {
+                (px(13.5 * scale), px(2.5 * scale))
+            } else if "()[]{}".contains(ch) {
+                (px(7.5 * scale), px(0.0))
             } else {
-                px(8.5 * scale)
+                (px(8.5 * scale), px(0.0))
             };
 
             nodes.push(MathNode::Text {
                 text: ch.to_string(),
                 font_size: text_size,
                 position: Point {
-                    x: cursor_x,
+                    x: cursor_x + offset_x,
                     y: px(0.0),
                 },
+                font_family: Some(if is_letter {
+                    crate::font::KATEX_MATH_FONT
+                } else {
+                    crate::font::KATEX_MAIN_FONT
+                }),
+                is_italic: is_letter,
             });
             cursor_x += char_width;
             i += 1;

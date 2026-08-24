@@ -1,4 +1,6 @@
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use log::{error, info};
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use services::config::get_app_root_dir;
 
 /// Linux 单实例检测：通知已有实例激活窗口，返回 true 表示应退出

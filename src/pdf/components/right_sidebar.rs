@@ -205,22 +205,54 @@ impl PdfReaderView {
                                                     cx.notify();
                                                 })),
                                         )
-                                        .child(
+                                        .child({
+                                            let copied_original = self.copied_translation_original;
                                             Button::new("copy-original")
                                                 .ghost()
-                                                .icon(IconName::Copy)
+                                                .icon(if copied_original {
+                                                    IconName::Check
+                                                } else {
+                                                    IconName::Copy
+                                                })
                                                 .h(rems(1.5))
                                                 .w(rems(1.5))
+                                                .when(copied_original, |btn| {
+                                                    btn.text_color(theme.primary)
+                                                })
                                                 .on_click(cx.listener(
-                                                    move |_this, _, _window, cx| {
+                                                    move |this, _, window, cx| {
                                                         cx.write_to_clipboard(
                                                             ClipboardItem::new_string(
                                                                 original_for_copy.clone(),
                                                             ),
                                                         );
+                                                        this.copied_translation_original = true;
+                                                        cx.notify();
+
+                                                        let window_handle = window.window_handle();
+                                                        cx.spawn(move |view: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                                                            let mut cx = cx.clone();
+                                                            async move {
+                                                                cx.background_executor()
+                                                                    .timer(std::time::Duration::from_millis(1500))
+                                                                    .await;
+                                                                let _ = cx.update_window(
+                                                                    window_handle,
+                                                                    |_, _, cx| {
+                                                                        if let Some(view) = view.upgrade() {
+                                                                            view.update(cx, |this, cx| {
+                                                                                this.copied_translation_original = false;
+                                                                                cx.notify();
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }
+                                                        })
+                                                        .detach();
                                                     },
-                                                )),
-                                        )
+                                                ))
+                                        })
                                     }),
                             ),
                     )
@@ -305,17 +337,49 @@ impl PdfReaderView {
                                         )
                                     })
                                     .when_some(translated_text.clone(), |this, text| {
+                                        let copied_result = self.copied_translation_result;
                                         this.child(
                                             Button::new("copy-translated")
                                                 .ghost()
-                                                .icon(IconName::Copy)
+                                                .icon(if copied_result {
+                                                    IconName::Check
+                                                } else {
+                                                    IconName::Copy
+                                                })
                                                 .h(rems(1.5))
                                                 .w(rems(1.5))
+                                                .when(copied_result, |btn| {
+                                                    btn.text_color(theme.primary)
+                                                })
                                                 .on_click(cx.listener(
-                                                    move |_this, _, _window, cx| {
+                                                    move |this, _, window, cx| {
                                                         cx.write_to_clipboard(
                                                             ClipboardItem::new_string(text.clone()),
                                                         );
+                                                        this.copied_translation_result = true;
+                                                        cx.notify();
+
+                                                        let window_handle = window.window_handle();
+                                                        cx.spawn(move |view: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                                                            let mut cx = cx.clone();
+                                                            async move {
+                                                                cx.background_executor()
+                                                                    .timer(std::time::Duration::from_millis(1500))
+                                                                    .await;
+                                                                let _ = cx.update_window(
+                                                                    window_handle,
+                                                                    |_, _, cx| {
+                                                                        if let Some(view) = view.upgrade() {
+                                                                            view.update(cx, |this, cx| {
+                                                                                this.copied_translation_result = false;
+                                                                                cx.notify();
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }
+                                                        })
+                                                        .detach();
                                                     },
                                                 )),
                                         )

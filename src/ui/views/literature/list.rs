@@ -627,13 +627,13 @@ impl LiteratureListView {
                                                             .rounded_full()
                                                             .bg(match literature.reading_status {
                                                                 ReadingStatus::ToRead => {
-                                                                    gpui::rgb(0xeab308).into()
+                                                                    gpui::rgb(0xef4444).into()
                                                                 }
                                                                 ReadingStatus::Reading => {
                                                                     gpui::rgb(0x22c55e).into()
                                                                 }
                                                                 ReadingStatus::Read => {
-                                                                    gpui::rgb(0xef4444).into()
+                                                                    gpui::rgb(0xeab308).into()
                                                                 }
                                                                 ReadingStatus::Unread => {
                                                                     gpui::transparent_black()
