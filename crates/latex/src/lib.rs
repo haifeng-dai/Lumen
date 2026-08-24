@@ -6,7 +6,7 @@ pub mod symbols;
 
 pub use element::MathElement;
 pub use engine::MathEngine;
-pub use font::{DEFAULT_MATH_FONT_FAMILY, MathFontContext};
+pub use font::{KATEX_MAIN_FONT, KATEX_MATH_FONT};
 pub use layout_tree::{LayoutResult, MathNode};
 pub use symbols::lookup_symbol;
 

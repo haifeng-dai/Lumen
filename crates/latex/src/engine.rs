@@ -955,10 +955,10 @@ impl MathEngine {
                         }
                     }
 
-                    // 顶置重音符号（居中偏上，紧凑贴合字母顶部）
-                    let accent_size = px(f32::from(text_size) * 0.75);
-                    let accent_y = px(5.5 * scale);
-                    let accent_x = cursor_x + (body_width - px(5.0 * scale)) / 2.0;
+                    // 顶置修饰帽子符号（统一适中 0.82 比例，精准居中贴合字母顶部）
+                    let accent_size = px(f32::from(text_size) * 0.82);
+                    let accent_offset_x = cursor_x + (body_width - px(5.5 * scale)) / 2.0;
+                    let accent_y = px(5.8 * scale);
 
                     if cmd == "bar" || cmd == "overline" {
                         // 细横线线条
@@ -976,7 +976,7 @@ impl MathEngine {
                             text: accent_mark.to_string(),
                             font_size: accent_size,
                             position: Point {
-                                x: accent_x,
+                                x: accent_offset_x,
                                 y: accent_y,
                             },
                         });
@@ -997,9 +997,12 @@ impl MathEngine {
                     continue;
                 }
 
-                // 字体与包装命令解析：\mathbb{R}, \mathcal{L}, \text{...}, \mathbf{...}, \mathrm{...}, \bm{...}
+                // 字体与包装命令解析：\mathbb{R}, \mathcal{L}, \mathfrak{g}, \mathscr{H}, \text{...}, \mathbf{...}, \mathrm{...}, \bm{...}
                 if cmd == "mathbb"
                     || cmd == "mathcal"
+                    || cmd == "mathfrak"
+                    || cmd == "frak"
+                    || cmd == "mathscr"
                     || cmd == "text"
                     || cmd == "mathrm"
                     || cmd == "mathbf"
@@ -1049,6 +1052,52 @@ impl MathEngine {
                             let sym_width = px(10.5 * scale);
                             nodes.push(MathNode::Text {
                                 text: sym.to_string(),
+                                font_size: text_size,
+                                position: Point {
+                                    x: cursor_x,
+                                    y: px(0.0),
+                                },
+                            });
+                            cursor_x += sym_width;
+                            continue;
+                        }
+                    } else if cmd == "mathfrak" || cmd == "frak" {
+                        let mut mapped_str = String::new();
+                        for c in body.trim().chars() {
+                            let key = format!("mathfrak{}", c);
+                            if let Some(sym) = crate::symbols::lookup_symbol(&key) {
+                                mapped_str.push_str(sym);
+                            } else {
+                                mapped_str.push(c);
+                            }
+                        }
+                        if !mapped_str.is_empty() {
+                            let sym_width = px(9.5 * scale * mapped_str.chars().count() as f32);
+                            nodes.push(MathNode::Text {
+                                text: mapped_str,
+                                font_size: text_size,
+                                position: Point {
+                                    x: cursor_x,
+                                    y: px(0.0),
+                                },
+                            });
+                            cursor_x += sym_width;
+                            continue;
+                        }
+                    } else if cmd == "mathscr" {
+                        let mut mapped_str = String::new();
+                        for c in body.trim().chars() {
+                            let key = format!("mathscr{}", c);
+                            if let Some(sym) = crate::symbols::lookup_symbol(&key) {
+                                mapped_str.push_str(sym);
+                            } else {
+                                mapped_str.push(c);
+                            }
+                        }
+                        if !mapped_str.is_empty() {
+                            let sym_width = px(10.0 * scale * mapped_str.chars().count() as f32);
+                            nodes.push(MathNode::Text {
+                                text: mapped_str,
                                 font_size: text_size,
                                 position: Point {
                                     x: cursor_x,
@@ -1234,9 +1283,8 @@ impl MathEngine {
                 continue;
             }
 
-            // 4. 普通符号 / 空格
+            // 4. 数学模式忽略普通空白字符（依照 TeX 规范，仅由显式宏 \, \quad 或特定运算符产生间距）
             if ch.is_whitespace() {
-                cursor_x += px(4.0 * scale);
                 i += 1;
                 continue;
             }

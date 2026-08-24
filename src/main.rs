@@ -141,7 +141,15 @@ fn main() {
             })
             .detach();
 
-            // 1.2 初始化 PDF 阅读器模块 (可选)
+            // 1.2 注册嵌入的 KaTeX 原生数学字体 (位于 assets/fonts/)
+            let font_sources = lumen::assets::Assets::fonts();
+            if let Err(e) = cx.text_system().add_fonts(font_sources) {
+                log::warn!("KaTeX 数学字体注册失败: {e}");
+            } else {
+                info!("KaTeX 原生数学字体已成功从 assets/fonts 注册到全局 TextSystem");
+            }
+
+            // 1.3 初始化 PDF 阅读器模块 (可选)
             info!("PDF Viewer 模块已加载");
 
             // 1.5 设置菜单（MacOS 全屏呼出菜单栏依赖菜单配置）

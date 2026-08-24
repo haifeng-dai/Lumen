@@ -14,6 +14,15 @@ impl Assets {
     pub fn get(file_path: &str) -> Option<rust_embed::EmbeddedFile> {
         EmbedAssets::get(file_path)
     }
+
+    /// 加载并返回所有嵌入的数学/应用字体数据 (assets/fonts/*.ttf)
+    #[must_use]
+    pub fn fonts() -> Vec<std::borrow::Cow<'static, [u8]>> {
+        EmbedAssets::iter()
+            .filter(|p| p.starts_with("fonts/") && p.ends_with(".ttf"))
+            .filter_map(|p| EmbedAssets::get(&p).map(|f| f.data))
+            .collect()
+    }
 }
 
 impl AssetSource for Assets {

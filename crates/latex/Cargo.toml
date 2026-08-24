@@ -6,4 +6,3 @@ edition = "2024"
 [dependencies]
 gpui = { workspace = true }
 log = { workspace = true }
-rust-embed = "8.9.0"

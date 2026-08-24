@@ -10,6 +10,57 @@ enum MarkdownSegment {
     BlockMath(String),
 }
 
+/// 将 ASCII 字母转换为 Unicode 数学斜体字符 (Mathematical Italic, U+1D434 / U+1D44E)
+fn to_math_italic_char(c: char) -> char {
+    match c {
+        'a'..='z' => {
+            if c == 'h' {
+                'ℎ' // U+210E PLANCK CONSTANT (Unicode 数学斜体 h)
+            } else {
+                char::from_u32(0x1D44E + (c as u32 - 'a' as u32)).unwrap_or(c)
+            }
+        }
+        'A'..='Z' => char::from_u32(0x1D434 + (c as u32 - 'A' as u32)).unwrap_or(c),
+        _ => c,
+    }
+}
+
+/// 将行内公式转化为高质量 Unicode 数学字符流（支持 \beta, \alpha 等符号宏与拉丁斜体变量）
+fn format_inline_math(math: &str) -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = math.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\\' {
+            i += 1;
+            let mut cmd = String::new();
+            while i < chars.len() && chars[i].is_alphabetic() {
+                cmd.push(chars[i]);
+                i += 1;
+            }
+            if let Some(sym) = latex::lookup_symbol(&cmd) {
+                out.push_str(sym);
+            } else {
+                out.push('\\');
+                out.push_str(&cmd);
+            }
+            continue;
+        }
+
+        // 单个拉丁变量转换为标准数学斜体字符
+        if ch.is_ascii_alphabetic() {
+            out.push(to_math_italic_char(ch));
+            i += 1;
+            continue;
+        }
+
+        out.push(ch);
+        i += 1;
+    }
+    out
+}
+
 /// 将包含 $$...$$, \[...\], $...$, \(...\) 的 Markdown 文本解析为段落与块级公式
 /// 仅将块级公式（$$...$$ 或 \[...\]）独立切分为居中排版的矢量公式节点，行内公式保留在文本流中
 fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
@@ -101,9 +152,8 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
 
                 let trimmed_math = math_content.trim();
                 if !trimmed_math.is_empty() {
-                    current_text.push('*');
-                    current_text.push_str(trimmed_math);
-                    current_text.push('*');
+                    let formatted = format_inline_math(trimmed_math);
+                    current_text.push_str(&formatted);
                 } else {
                     current_text.push_str("\\(\\)");
                 }
@@ -159,7 +209,7 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
             continue;
         }
 
-        // 遇到 $ 行内公式 ($...$)：转换为斜体文本格式嵌入当前段落
+        // 遇到 $ 行内公式 ($...$)：转换为高保真 Unicode 数学字符嵌入当前段落
         if chars[i] == '$' {
             i += 1;
             let start = i;
@@ -179,9 +229,8 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
 
                 let trimmed_math = math_content.trim();
                 if !trimmed_math.is_empty() {
-                    current_text.push('*');
-                    current_text.push_str(trimmed_math);
-                    current_text.push('*');
+                    let formatted = format_inline_math(trimmed_math);
+                    current_text.push_str(&formatted);
                 } else {
                     current_text.push('$');
                 }

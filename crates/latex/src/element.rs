@@ -1,5 +1,6 @@
 use crate::engine::MathEngine;
 use crate::layout_tree::MathNode;
+use gpui::prelude::*;
 use gpui::*;
 
 /// 纯 GPUI 原生 LaTeX 渲染元素
@@ -68,12 +69,23 @@ impl IntoElement for MathElement {
                     let left = position.x;
                     let top = container_h - depth - position.y - font_size;
 
+                    // 智能正斜体与字体判定：变量字母（包括拉丁 a-z、希腊字母 α, β, θ 等）使用 KaTeX_Math 斜体，数字、函数名、运算符与括号使用 KaTeX_Main 正体
+                    let is_variable = text.chars().next().map_or(false, |c| c.is_alphabetic())
+                        && text.len() <= 4; // 排除长函数名如 sin, cos, softmax
+
+                    let font_fam = if is_variable {
+                        crate::font::KATEX_MATH_FONT
+                    } else {
+                        crate::font::KATEX_MAIN_FONT
+                    };
+
                     let mut text_div = div()
                         .absolute()
                         .left(left)
                         .top(top)
                         .text_size(font_size)
-                        .italic()
+                        .font_family(gpui::SharedString::from(font_fam))
+                        .when(is_variable, |this| this.italic())
                         .child(text);
 
                     if let Some(c) = self.color {
