@@ -1,5 +1,4 @@
 use crate::app_state::ui::UiState;
-use gpui::prelude::*;
 use services::query::data::AppViewMode;
 
 use super::*;

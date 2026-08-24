@@ -10,7 +10,7 @@ use crate::ui::{
         toolbar::ToolbarView,
     },
 };
-use gpui::{AppContext, Entity, KeyBinding, ReadGlobal, Window, prelude::*, px};
+use gpui::{AppContext, Entity, KeyBinding, ReadGlobal, Window, px};
 use services::notify::RefreshMsg;
 use services::{app::MainApp, sync::SyncStatus};
 use std::sync::Arc;

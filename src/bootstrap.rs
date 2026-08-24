@@ -1,3 +1,6 @@
+use log::{error, info};
+use services::config::get_app_root_dir;
+
 /// Linux 单实例检测：通知已有实例激活窗口，返回 true 表示应退出
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub(crate) fn notify_running_instance() -> bool {
@@ -43,6 +46,7 @@ pub(crate) fn start_socket_listener(tx: std::sync::mpsc::Sender<()>) {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn set_mac_app_name() {
     use objc::{class, msg_send, runtime::Object, sel, sel_impl};
     use std::ffi::CString;

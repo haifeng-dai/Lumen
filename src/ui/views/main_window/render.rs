@@ -6,7 +6,7 @@ use crate::ui::actions::{
 use crate::ui::dialogs::FetchMode;
 use crate::ui::views::settings::SettingsTab;
 use components::{add_drag_behavior, make_window_controls};
-use gpui::{DragMoveEvent, FontWeight, MouseButton, Window, div, prelude::*, rems};
+use gpui::{DragMoveEvent, FontWeight, MouseButton, Window, div, rems};
 use gpui_component::{ActiveTheme, h_flex, v_flex};
 use i18n::{I18nKey, t};
 use services::query::data::AppViewMode;
