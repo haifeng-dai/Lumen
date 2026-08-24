@@ -1,14 +1,14 @@
 use crate::app_state::data::DataStore;
 use crate::app_state::ui::UiState;
 use crate::ui::views::main_window::{Cancel, MainWindow};
-use components::IconName;
+use components::{ArticleCard, IconName};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, AnyWindowHandle, AppContext, AsyncApp, Entity, FocusHandle, FontWeight, KeyBinding,
+    AnyElement, AnyWindowHandle, AppContext, AsyncApp, Entity, FocusHandle, KeyBinding,
     ListAlignment, ListState, MouseButton, SharedString, WeakEntity, Window, actions, div, px,
     rems,
 };
-use gpui_component::{ActiveTheme, Icon, Theme, h_flex, list::ListItem, v_flex};
+use gpui_component::{ActiveTheme, Icon, Theme};
 use models::FeedItem;
 use parser::normalize::author_full_name;
 use services::app::MainApp;
@@ -21,6 +21,7 @@ actions!(subscription_list, [SelectAll, DeleteSelected]);
 #[derive(Clone)]
 pub struct FeedItemViewModel {
     pub item: Arc<FeedItem>,
+    pub authors_text: SharedString,
     pub meta_text: SharedString,
 }
 
@@ -49,7 +50,6 @@ impl SubscriptionListView {
             get_feed_items(&ds.feed_items, &ui.selected_feed_id)
                 .iter()
                 .map(|item| {
-                    let journal = item.journal.clone().unwrap_or_default();
                     let all_authors = item
                         .authors
                         .iter()
@@ -58,16 +58,29 @@ impl SubscriptionListView {
                         .join(", ");
 
                     let mut meta_parts = Vec::new();
-                    if !journal.is_empty() {
-                        meta_parts.push(journal);
+                    if let Some(ref journal) = item.journal
+                        && !journal.is_empty()
+                    {
+                        meta_parts.push(journal.clone());
+                    } else if let Some(ref publisher) = item.publisher
+                        && !publisher.is_empty()
+                    {
+                        meta_parts.push(publisher.clone());
                     }
-                    if !all_authors.is_empty() {
-                        meta_parts.push(all_authors);
+
+                    if let Some(year) = item.year {
+                        meta_parts.push(year.to_string());
+                    } else if let Some(ref pub_at) = item.published_at
+                        && !pub_at.is_empty()
+                    {
+                        meta_parts.push(pub_at.clone());
                     }
-                    let meta_line = meta_parts.join(" | ");
+
+                    let meta_line = meta_parts.join(" · ");
 
                     FeedItemViewModel {
                         item: (*item).clone(),
+                        authors_text: SharedString::from(all_authors),
                         meta_text: SharedString::from(meta_line),
                     }
                 })
@@ -132,7 +145,6 @@ impl SubscriptionListView {
         self.visible_subscriptions = get_feed_items(&ds.feed_items, &ui.selected_feed_id)
             .iter()
             .map(|item| {
-                let journal = item.journal.clone().unwrap_or_default();
                 let all_authors = item
                     .authors
                     .iter()
@@ -141,16 +153,29 @@ impl SubscriptionListView {
                     .join(", ");
 
                 let mut meta_parts = Vec::new();
-                if !journal.is_empty() {
-                    meta_parts.push(journal);
+                if let Some(ref journal) = item.journal
+                    && !journal.is_empty()
+                {
+                    meta_parts.push(journal.clone());
+                } else if let Some(ref publisher) = item.publisher
+                    && !publisher.is_empty()
+                {
+                    meta_parts.push(publisher.clone());
                 }
-                if !all_authors.is_empty() {
-                    meta_parts.push(all_authors);
+
+                if let Some(year) = item.year {
+                    meta_parts.push(year.to_string());
+                } else if let Some(ref pub_at) = item.published_at
+                    && !pub_at.is_empty()
+                {
+                    meta_parts.push(pub_at.clone());
                 }
-                let meta_line = meta_parts.join(" | ");
+
+                let meta_line = meta_parts.join(" · ");
 
                 FeedItemViewModel {
                     item: (*item).clone(),
+                    authors_text: SharedString::from(all_authors),
                     meta_text: SharedString::from(meta_line),
                 }
             })
@@ -292,7 +317,6 @@ impl SubscriptionListView {
         }
 
         let vm = &self.visible_subscriptions[ix];
-        let meta_text = vm.meta_text.clone();
         let is_selected = cx
             .global::<UiState>()
             .selected_feed_item_ids
@@ -302,7 +326,7 @@ impl SubscriptionListView {
         let view = cx.entity().clone();
         let focus_handle = self.focus_handle.clone();
 
-        Self::render_subscription_item(&vm.item, meta_text, view, is_selected, theme, focus_handle)
+        Self::render_subscription_item(vm, view, is_selected, theme, focus_handle)
             .into_any_element()
     }
 }
@@ -352,15 +376,18 @@ impl Render for SubscriptionListView {
 
 impl SubscriptionListView {
     fn render_subscription_item(
-        item: &FeedItem,
-        meta_line: SharedString,
+        vm: &FeedItemViewModel,
         view: Entity<Self>,
         is_selected: bool,
         theme: Theme,
         focus_handle: FocusHandle,
     ) -> impl IntoElement {
+        let item = &vm.item;
         let is_unread = !item.is_read;
         let item_id: SharedString = item.id.clone().into();
+        let title = item.title.clone();
+        let all_authors = vm.authors_text.clone();
+        let meta_text = vm.meta_text.clone();
 
         let view_click = view.clone();
         let view_right_click = view.clone();
@@ -400,92 +427,52 @@ impl SubscriptionListView {
                     });
                 },
             )
-            .child(
-                ListItem::new(item_id.clone())
+            .child({
+                let mut card = ArticleCard::new(item_id.clone())
+                    .title(title)
+                    .authors(all_authors)
+                    .meta(meta_text)
                     .selected(is_selected)
-                    .w_full()
-                    .py_3()
-                    .px_4()
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .on_click(move |event, window, app| {
-                        let id = item_id.to_string();
-                        let focus_handle = focus_handle_click.clone();
-                        let handle = window.window_handle();
-                        view_click.update(app, move |this, cx| {
-                            window.focus(&focus_handle, cx);
-                            let cmd = event.modifiers().platform;
-                            let shift = event.modifiers().shift;
+                    .bold(is_unread)
+                    .status_pill(if is_unread {
+                        Some(gpui::rgb(0xef4444).into())
+                    } else {
+                        None
+                    });
 
-                            if cmd {
-                                this.toggle_feed_item_selection(id, cx);
-                            } else if shift {
-                                this.range_select_feed_item(id, handle, cx);
+                if item.is_added_to_library {
+                    card = card.top_right(
+                        Icon::new(IconName::Check)
+                            .size(rems(0.75))
+                            .flex_none()
+                            .text_color(if is_selected {
+                                theme.primary_foreground
                             } else {
-                                this.select_feed_item(id, handle, cx);
-                            }
-                        });
-                    })
-                    .child(
-                        v_flex()
-                            .flex_grow(1.0)
-                            .min_w_0()
-                            .gap_1()
-                            .child(
-                                    h_flex()
-                                        .w_full()
-                                        .gap_2()
-                                        .items_center()
-                                        .child(
-                                            // 未读圆点
-                                            div()
-                                                .size(rems(0.625))
-                                                .rounded_full()
-                                                .bg(if is_unread {
-                                                    theme.primary
-                                                } else {
-                                                    gpui::transparent_black()
-                                                })
-                                                .flex_shrink_0(),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_weight(if is_unread {
-                                                    FontWeight::BOLD
-                                                } else {
-                                                    FontWeight::NORMAL
-                                                })
-                                                .text_color(if is_selected {
-                                                    theme.accent_foreground
-                                                } else {
-                                                    theme.foreground
-                                                })
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(item.title.clone())
-                                                .flex_grow(1.0),
-                                        )
-                                        .when(item.is_added_to_library, |this| {
-                                            this.child(
-                                                Icon::new(IconName::Check)
-                                                    .size(rems(0.875))
-                                                    .text_color(theme.success)
-                                                    .flex_shrink_0(),
-                                            )
-                                        }),
-                                )
-                                .child(
-                                    div()
-                                        .pl(rems(1.0)) // 为对齐圆点留出的偏移
-                                        .w_full()
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .text_xs()
-                                        .text_color(theme.muted_foreground)
-                                        .child(meta_line),
-                                ),
-                        ),
-            )
+                                theme.success
+                            }),
+                    );
+                }
+
+                let id = item_id.to_string();
+                let focus_handle_click = focus_handle_click.clone();
+                card.on_click(move |event, window, app| {
+                    let id = id.clone();
+                    let focus_handle = focus_handle_click.clone();
+                    let handle = window.window_handle();
+                    view_click.update(app, move |this, cx| {
+                        window.focus(&focus_handle, cx);
+                        let cmd = event.modifiers().platform;
+                        let shift = event.modifiers().shift;
+
+                        if cmd {
+                            this.toggle_feed_item_selection(id, cx);
+                        } else if shift {
+                            this.range_select_feed_item(id, handle, cx);
+                        } else {
+                            this.select_feed_item(id, handle, cx);
+                        }
+                    });
+                })
+            })
     }
 }

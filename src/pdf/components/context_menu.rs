@@ -445,104 +445,94 @@ impl PdfReaderView {
         cx.notify();
     }
 
-    /// 计算工具栏在屏幕（窗口）坐标系中的位置，包含碰撞检测
+    /// 获取选区在页面局部坐标系下的包围盒 (min_x, min_y, max_x, max_y)
+    fn get_selection_bounds(
+        &self,
+        state: &services::pdf::AnnotationToolbarState,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let data = self
+            .page_text_data
+            .get(state.start_page as usize)?
+            .as_ref()?;
+        let end_on_page = if state.start_page == state.end_page {
+            state.end_char
+        } else {
+            data.chars.len().saturating_sub(1)
+        };
+        if state.start_char > end_on_page {
+            return None;
+        }
+        let blocks = data.merge_char_blocks(state.start_char, end_on_page);
+        let first = *blocks.first()?;
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = first;
+        for &(bx, by, bx2, by2) in &blocks[1..] {
+            min_x = min_x.min(bx);
+            min_y = min_y.min(by);
+            max_x = max_x.max(bx2);
+            max_y = max_y.max(by2);
+        }
+        Some((min_x, min_y, max_x, max_y))
+    }
+
+    /// 获取指定页面在视口（窗口）坐标系下的左上角原点 (origin_x, origin_y)
+    fn get_page_screen_origin(&self, page_index: usize, window: &Window) -> Option<(f32, f32)> {
+        let scroll_top = self.list_state.logical_scroll_top();
+        if page_index < scroll_top.item_ix {
+            return None;
+        }
+
+        let rem_size_px = f32::from(window.rem_size());
+        let toolbar_h = f32::from(gpui::rems(TOOLBAR_HEIGHT_REMS).to_pixels(window.rem_size()));
+
+        // 计算 Y 坐标：累计前面页面的高度并减去当前页的滚动偏移量
+        let mut screen_y = toolbar_h - f32::from(scroll_top.offset_in_item);
+        for ix in scroll_top.item_ix..page_index {
+            screen_y += helpers::page_height(&self.page_sizes, ix, self.zoom_level, rem_size_px);
+        }
+
+        // 计算 X 坐标：剔除侧边栏后的可用居中区域
+        let left_w = if self.is_left_sidebar_open {
+            f32::from(self.left_sidebar_width)
+        } else {
+            0.0
+        };
+        let right_w = if self.is_right_sidebar_open {
+            f32::from(self.right_sidebar_width)
+        } else {
+            0.0
+        };
+        let available_w = f32::from(window.viewport_size().width) - left_w - right_w;
+        let display_w = PAGE_BASE_WIDTH_REMS * self.zoom_level * rem_size_px;
+        let screen_x = left_w + (available_w - display_w) / 2.0 + self.offset_x;
+
+        Some((screen_x, screen_y))
+    }
+
+    /// 计算工具栏在屏幕（窗口）坐标系中的位置
     pub(crate) fn compute_toolbar_screen_pos(
         &mut self,
         window: &Window,
     ) -> Option<(Pixels, Pixels)> {
         let state = self.annotation_state.toolbar.as_ref()?;
+        let (min_x, min_y, max_x, max_y) = self.get_selection_bounds(state)?;
+        let (page_x, page_y) = self.get_page_screen_origin(state.start_page as usize, window)?;
 
-        // 跨页时取首页作为工具栏定位参考
-        let page_index = state.start_page as usize;
-
-        let rem_size = window.rem_size();
-        let rem_size_px = f32::from(rem_size);
-        let display_width_px = PAGE_BASE_WIDTH_REMS * self.zoom_level * rem_size_px;
-
-        // 1. 选中文本在页面内的包围盒（取首页）
-        // 跨页时 end_char 在 end_page 上，首页应截断到页尾
-        let (min_x, min_y, max_x, max_y) = self
-            .page_text_data
-            .get(state.start_page as usize)
-            .and_then(|d| d.as_ref())
-            .and_then(|data| {
-                let end_on_page = if state.start_page == state.end_page {
-                    state.end_char
-                } else {
-                    data.chars.len().saturating_sub(1)
-                };
-                if state.start_char > end_on_page {
-                    return None;
-                }
-                let blocks = data.merge_char_blocks(state.start_char, end_on_page);
-                if blocks.is_empty() {
-                    return None;
-                }
-                let (mut mnx, mut mny, mut mxx, mut mxy) = blocks[0];
-                for &(bx, by, bx2, by2) in &blocks {
-                    mnx = mnx.min(bx);
-                    mny = mny.min(by);
-                    mxx = mxx.max(bx2);
-                    mxy = mxy.max(by2);
-                }
-                Some((mnx, mny, mxx, mxy))
-            })?;
-
-        // 2. 该页在视口中的屏幕 Y 位置
-        let toolbar_height_px = f32::from(gpui::rems(TOOLBAR_HEIGHT_REMS).to_pixels(rem_size));
-        let tab_bar_h = self.tab_bar_offset_px;
-        let scroll_top = self.list_state.logical_scroll_top();
-
-        if page_index < scroll_top.item_ix {
-            return None;
-        }
-
-        let mut page_screen_top = 0.0_f32;
-        for ix in scroll_top.item_ix..page_index {
-            page_screen_top +=
-                helpers::page_height(&self.page_sizes, ix, self.zoom_level, rem_size_px);
-        }
-        page_screen_top -= f32::from(scroll_top.offset_in_item);
-
-        // 3. 页面水平居中偏移
-        let mut available_w = f32::from(window.viewport_size().width);
-        let mut offset_x = 0.0;
-        if self.is_left_sidebar_open {
-            let w = f32::from(self.left_sidebar_width);
-            available_w -= w;
-            offset_x = w;
-        }
-        if self.is_right_sidebar_open {
-            available_w -= f32::from(self.right_sidebar_width);
-        }
-        let page_screen_left = offset_x + (available_w - display_width_px) / 2.0 + self.offset_x;
-
-        // 4. 选中文本的中心屏幕坐标
-        let center_screen_x = page_screen_left + (min_x + max_x) / 2.0;
-        // page_screen_top 相对于列表区域；外层 h_flex 的坐标比列表起始高 toolbar_height_px，需要加上该偏移
-        let text_bottom_screen_y = page_screen_top + max_y + toolbar_height_px;
-        let text_top_screen_y = page_screen_top + min_y + toolbar_height_px;
-
-        // 5. 碰撞检测（外层 h_flex 视口边界）
-        let viewport_w = f32::from(window.viewport_size().width);
-        let viewport_h = f32::from(window.viewport_size().height) - tab_bar_h;
+        let center_x = page_x + (min_x + max_x) / 2.0;
+        let text_top_y = page_y + min_y;
+        let text_bottom_y = page_y + max_y;
 
         const TOOLBAR_W: f32 = 200.0;
         const TOOLBAR_H: f32 = 80.0;
 
-        let tool_x =
-            (center_screen_x - TOOLBAR_W / 2.0).clamp(0.0, (viewport_w - TOOLBAR_W).max(0.0));
+        let viewport_w = f32::from(window.viewport_size().width);
+        let viewport_h = f32::from(window.viewport_size().height) - self.tab_bar_offset_px;
 
-        let clamp_y = |y: f32| -> f32 {
-            y.max(toolbar_height_px)
-                .min((viewport_h - TOOLBAR_H).max(toolbar_height_px))
+        let tool_x = (center_x - TOOLBAR_W / 2.0).clamp(0.0, (viewport_w - TOOLBAR_W).max(0.0));
+        let tool_y = if text_bottom_y + 6.0 + TOOLBAR_H > viewport_h {
+            text_top_y - TOOLBAR_H - 6.0
+        } else {
+            text_bottom_y + 6.0
         };
-
-        let mut tool_y = clamp_y(text_bottom_screen_y + 5.0);
-
-        if tool_y + TOOLBAR_H > viewport_h {
-            tool_y = clamp_y(text_top_screen_y - TOOLBAR_H - 12.0);
-        }
 
         Some((px(tool_x), px(tool_y)))
     }

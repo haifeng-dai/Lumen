@@ -5,7 +5,7 @@ use std::sync::Arc;
 // ── 2. 第三方与框架库导入 ──
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, AppContext, Entity, FocusHandle, FontWeight, Hsla, KeyBinding, ListAlignment,
+    AnyElement, App, AppContext, Entity, FocusHandle, Hsla, KeyBinding, ListAlignment,
     ListState, MouseButton, MouseDownEvent, SharedString, WeakEntity, Window, actions, div, px,
     rems,
 };
@@ -22,7 +22,7 @@ use crate::app_state::data::DataStore;
 use crate::app_state::ui::UiState;
 use crate::ui::views::literature::LiteratureDragInfo;
 use crate::ui::views::main_window::{ContextMenuType, MainWindow};
-use components::IconName;
+use components::{ArticleCard, IconName};
 use services::app::MainApp;
 use services::query::data::{get_folder_literatures, search_literatures as search_literatures_fn};
 
@@ -461,13 +461,6 @@ impl LiteratureListView {
         let all_authors = vm.authors_text.clone();
         let meta_text = vm.meta_text.clone();
 
-        // 构建元数据行组件 - 使用div而不是h_flex以正确支持text_ellipsis
-        let meta_row = div()
-            .overflow_hidden()
-            .text_xs()
-            .text_ellipsis()
-            .child(meta_text);
-
         let item_wrapper_id: SharedString = format!("lit-item-wrapper-{}", literature.id).into();
 
         // 使用预计算的拖拽信息
@@ -562,181 +555,86 @@ impl LiteratureListView {
                     });
                 }
             })
-            .child(
-                div()
-                    .id(lit_id.clone())
-                    .when(is_selected, |s| {
-                        s.bg(theme.primary).text_color(theme.primary_foreground)
-                    })
-                    .when(!is_selected, |s| {
-                        s.hover(|s| s.bg(theme.primary.opacity(0.15)))
-                    })
-                    .w_full()
-                    .rounded_md()
-                    .overflow_hidden()
-                    .border_y_1()
-                    .border_color(theme.border)
-                    .on_click({
-                        let id = lit_id.to_string();
-                        let view = view.clone();
-                        let focus_handle = focus_handle.clone();
-                        move |event: &gpui::ClickEvent, window: &mut Window, app: &mut App| {
-                            let id = id.clone();
-                            let focus_handle = focus_handle.clone();
-                            view.update(app, |this, cx| {
-                                window.focus(&focus_handle, cx);
-                                let cmd = event.modifiers().platform;
-                                let shift = event.modifiers().shift;
+            .child({
+                let pill_color = match literature.reading_status {
+                    ReadingStatus::ToRead => Some(gpui::rgb(0xef4444).into()),
+                    ReadingStatus::Reading => Some(gpui::rgb(0x22c55e).into()),
+                    ReadingStatus::Read => Some(gpui::rgb(0xeab308).into()),
+                    ReadingStatus::Unread => None,
+                };
 
-                                if cmd {
-                                    this.toggle_literature_selection(id, cx);
-                                } else if shift {
-                                    this.range_select_literature(id, cx);
-                                } else {
-                                    this.select_literature(id, cx);
-                                }
-                            });
+                let mut card = ArticleCard::new(lit_id.clone())
+                    .title(title)
+                    .authors(all_authors)
+                    .meta(meta_text)
+                    .selected(is_selected)
+                    .status_pill(pill_color);
+
+                if has_tags {
+                    card = card.top_right(
+                        h_flex().gap_1().children(
+                            tag_colors.iter().map(|(_, color)| {
+                                div().size(rems(0.5)).rounded_full().bg(*color)
+                            }),
+                        ),
+                    );
+                }
+
+                let has_main = literature.attachments.iter().any(|a| a.is_main);
+                let has_other = literature.attachments.iter().any(|a| !a.is_main);
+                if has_main || has_other {
+                    card = card.bottom_right(
+                        h_flex()
+                            .gap_1()
+                            .flex_shrink_0()
+                            .when(has_main, |this| {
+                                this.child(
+                                    Icon::new(IconName::FileSolid)
+                                        .size(rems(0.75))
+                                        .flex_none()
+                                        .text_color(if is_selected {
+                                            theme.primary_foreground
+                                        } else {
+                                            theme.foreground
+                                        }),
+                                )
+                            })
+                            .when(has_other, |this| {
+                                this.child(
+                                    Icon::new(IconName::Attachment)
+                                        .size(rems(0.75))
+                                        .flex_none()
+                                        .text_color(if is_selected {
+                                            theme.primary_foreground
+                                        } else {
+                                            theme.foreground
+                                        }),
+                                )
+                            }),
+                    );
+                }
+
+                let id = lit_id.to_string();
+                let view_click = view.clone();
+                let focus_handle_click = focus_handle.clone();
+                card.on_click(move |event, window, app| {
+                    let id = id.clone();
+                    let focus_handle = focus_handle_click.clone();
+                    view_click.update(app, |this, cx| {
+                        window.focus(&focus_handle, cx);
+                        let cmd = event.modifiers().platform;
+                        let shift = event.modifiers().shift;
+
+                        if cmd {
+                            this.toggle_literature_selection(id, cx);
+                        } else if shift {
+                            this.range_select_literature(id, cx);
+                        } else {
+                            this.select_literature(id, cx);
                         }
-                    })
-                    .child(
-                        v_flex()
-                            .w_full()
-                            .py(rems(0.3125)) // 稍微增大到 5px，提升呼吸感
-                            .px_2()
-                            .child(
-                                h_flex()
-                                    .w_full()
-                                    .justify_between()
-                                    .items_start()
-                                    .gap_2()
-                                    .child(
-                                        h_flex()
-                                            .flex_grow(1.0)
-                                            .min_w_0()
-                                            .gap_2()
-                                            .items_center()
-                                            // 阅读状态小圆柱 (Pill)
-                                            .when(
-                                                literature.reading_status != ReadingStatus::Unread,
-                                                |this| {
-                                                    this.child(
-                                                        div()
-                                                            .w(rems(0.1875))
-                                                            .h(rems(0.875))
-                                                            .flex_shrink_0()
-                                                            .rounded_full()
-                                                            .bg(match literature.reading_status {
-                                                                ReadingStatus::ToRead => {
-                                                                    gpui::rgb(0xef4444).into()
-                                                                }
-                                                                ReadingStatus::Reading => {
-                                                                    gpui::rgb(0x22c55e).into()
-                                                                }
-                                                                ReadingStatus::Read => {
-                                                                    gpui::rgb(0xeab308).into()
-                                                                }
-                                                                ReadingStatus::Unread => {
-                                                                    gpui::transparent_black()
-                                                                }
-                                                            }),
-                                                    )
-                                                },
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_grow(1.0)
-                                                    .overflow_hidden()
-                                                    .text_sm()
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .text_color(if is_selected {
-                                                        theme.primary_foreground
-                                                    } else {
-                                                        theme.foreground
-                                                    })
-                                                    .text_ellipsis()
-                                                    .child(title.clone()),
-                                            ),
-                                    )
-                                    // 标题右侧的标签圆点 (重叠样式) - 使用预计算的颜色
-                                    .when(has_tags, |this| {
-                                        this.child(h_flex().gap_1().children(
-                                            tag_colors.iter().map(|(_, color)| {
-                                                div().size(rems(0.5)).rounded_full().bg(*color)
-                                            }),
-                                        ))
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .overflow_hidden()
-                                    .text_xs()
-                                    .line_height(rems(1.0))
-                                    .text_color(if is_selected {
-                                        theme.primary_foreground
-                                    } else {
-                                        theme.foreground
-                                    })
-                                    .text_ellipsis()
-                                    .child(all_authors),
-                            )
-                            .child(
-                                h_flex()
-                                    .w_full()
-                                    .justify_between()
-                                    .line_height(rems(1.0))
-                                    .child(
-                                        h_flex()
-                                            .gap_1()
-                                            .flex_grow(1.0)
-                                            .min_w_0()
-                                            .overflow_hidden()
-                                            .text_xs()
-                                            .text_color(if is_selected {
-                                                theme.primary_foreground
-                                            } else {
-                                                theme.foreground
-                                            })
-                                            .child(meta_row),
-                                    )
-                                    .child(
-                                        h_flex()
-                                            .gap_1()
-                                            .flex_shrink_0()
-                                            .when(
-                                                literature.attachments.iter().any(|a| a.is_main),
-                                                |this| {
-                                                    this.child(
-                                                        Icon::new(IconName::FileSolid)
-                                                            .size(rems(0.75))
-                                                            .flex_none()
-                                                            .text_color(if is_selected {
-                                                                theme.primary_foreground
-                                                            } else {
-                                                                theme.foreground
-                                                            }),
-                                                    )
-                                                },
-                                            )
-                                            .when(
-                                                literature.attachments.iter().any(|a| !a.is_main),
-                                                |this| {
-                                                    this.child(
-                                                        Icon::new(IconName::Attachment)
-                                                            .size(rems(0.75))
-                                                            .flex_none()
-                                                            .text_color(if is_selected {
-                                                                theme.primary_foreground
-                                                            } else {
-                                                                theme.foreground
-                                                            }),
-                                                    )
-                                                },
-                                            ),
-                                    ),
-                            ),
-                    ),
-            )
+                    });
+                })
+            })
     }
 
     /// 渲染空状态

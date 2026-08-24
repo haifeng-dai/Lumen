@@ -563,15 +563,6 @@ impl super::LiteratureDetailView {
                             )),
                     ),
             )
-            .when(note_cards.is_empty(), |this| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .py_2()
-                        .child(t(I18nKey::NoNotes, lang)),
-                )
-            })
             .when(!note_cards.is_empty(), |this| this.children(note_cards))
     }
 }
