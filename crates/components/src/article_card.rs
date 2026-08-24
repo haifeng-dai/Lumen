@@ -18,7 +18,8 @@ pub struct ArticleCard {
     pub top_right: Option<AnyElement>,
     pub bottom_right: Option<AnyElement>,
     pub on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static>>,
-    pub on_right_mouse_down: Option<Box<dyn Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static>>,
+    pub on_right_mouse_down:
+        Option<Box<dyn Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static>>,
 }
 
 impl ArticleCard {
@@ -38,16 +39,52 @@ impl ArticleCard {
         }
     }
 
-    pub fn title(mut self, v: impl Into<SharedString>) -> Self { self.title = v.into(); self }
-    pub fn authors(mut self, v: impl Into<SharedString>) -> Self { self.authors = v.into(); self }
-    pub fn meta(mut self, v: impl Into<SharedString>) -> Self { self.meta = v.into(); self }
-    pub fn status_pill(mut self, v: Option<Hsla>) -> Self { self.status_pill = v; self }
-    pub fn selected(mut self, v: bool) -> Self { self.is_selected = v; self }
-    pub fn bold(mut self, v: bool) -> Self { self.is_bold = v; self }
-    pub fn top_right(mut self, v: impl IntoElement) -> Self { self.top_right = Some(v.into_any_element()); self }
-    pub fn bottom_right(mut self, v: impl IntoElement) -> Self { self.bottom_right = Some(v.into_any_element()); self }
-    pub fn on_click(mut self, h: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static) -> Self { self.on_click = Some(Box::new(h)); self }
-    pub fn on_right_mouse_down(mut self, h: impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static) -> Self { self.on_right_mouse_down = Some(Box::new(h)); self }
+    pub fn title(mut self, v: impl Into<SharedString>) -> Self {
+        self.title = v.into();
+        self
+    }
+    pub fn authors(mut self, v: impl Into<SharedString>) -> Self {
+        self.authors = v.into();
+        self
+    }
+    pub fn meta(mut self, v: impl Into<SharedString>) -> Self {
+        self.meta = v.into();
+        self
+    }
+    pub fn status_pill(mut self, v: Option<Hsla>) -> Self {
+        self.status_pill = v;
+        self
+    }
+    pub fn selected(mut self, v: bool) -> Self {
+        self.is_selected = v;
+        self
+    }
+    pub fn bold(mut self, v: bool) -> Self {
+        self.is_bold = v;
+        self
+    }
+    pub fn top_right(mut self, v: impl IntoElement) -> Self {
+        self.top_right = Some(v.into_any_element());
+        self
+    }
+    pub fn bottom_right(mut self, v: impl IntoElement) -> Self {
+        self.bottom_right = Some(v.into_any_element());
+        self
+    }
+    pub fn on_click(
+        mut self,
+        h: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(h));
+        self
+    }
+    pub fn on_right_mouse_down(
+        mut self,
+        h: impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
+    ) -> Self {
+        self.on_right_mouse_down = Some(Box::new(h));
+        self
+    }
 }
 
 impl RenderOnce for ArticleCard {
@@ -62,8 +99,12 @@ impl RenderOnce for ArticleCard {
             .overflow_hidden()
             .border_y_1()
             .border_color(theme.border)
-            .when(is_selected, |s| s.bg(theme.primary).text_color(theme.primary_foreground))
-            .when(!is_selected, |s| s.hover(|s| s.bg(theme.primary.opacity(0.08))));
+            .when(is_selected, |s| {
+                s.bg(theme.primary).text_color(theme.primary_foreground)
+            })
+            .when(!is_selected, |s| {
+                s.hover(|s| s.bg(theme.primary.opacity(0.08)))
+            });
 
         if let Some(on_click) = self.on_click {
             card = card.on_click(on_click);
@@ -72,7 +113,11 @@ impl RenderOnce for ArticleCard {
             card = card.on_mouse_down(MouseButton::Right, on_rmd);
         }
 
-        let meta_row = div().overflow_hidden().text_xs().text_ellipsis().child(self.meta);
+        let meta_row = div()
+            .overflow_hidden()
+            .text_xs()
+            .text_ellipsis()
+            .child(self.meta);
 
         card.child(
             v_flex()
@@ -99,7 +144,11 @@ impl RenderOnce for ArticleCard {
                                             .h(rems(0.875))
                                             .flex_shrink_0()
                                             .rounded_full()
-                                            .bg(if is_selected { theme.primary_foreground } else { pill }),
+                                            .bg(if is_selected {
+                                                theme.primary_foreground
+                                            } else {
+                                                pill
+                                            }),
                                     )
                                 })
                                 .child(
@@ -107,8 +156,16 @@ impl RenderOnce for ArticleCard {
                                         .flex_grow(1.0)
                                         .overflow_hidden()
                                         .text_sm()
-                                        .font_weight(if self.is_bold { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                        .text_color(if is_selected { theme.primary_foreground } else { theme.foreground })
+                                        .font_weight(if self.is_bold {
+                                            FontWeight::BOLD
+                                        } else {
+                                            FontWeight::NORMAL
+                                        })
+                                        .text_color(if is_selected {
+                                            theme.primary_foreground
+                                        } else {
+                                            theme.foreground
+                                        })
                                         .text_ellipsis()
                                         .child(self.title),
                                 ),
@@ -122,7 +179,11 @@ impl RenderOnce for ArticleCard {
                         .overflow_hidden()
                         .text_xs()
                         .line_height(rems(1.0))
-                        .text_color(if is_selected { theme.primary_foreground } else { theme.foreground })
+                        .text_color(if is_selected {
+                            theme.primary_foreground
+                        } else {
+                            theme.foreground
+                        })
                         .text_ellipsis()
                         .child(self.authors),
                 )
@@ -139,7 +200,11 @@ impl RenderOnce for ArticleCard {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .text_xs()
-                                .text_color(if is_selected { theme.primary_foreground } else { theme.muted_foreground })
+                                .text_color(if is_selected {
+                                    theme.primary_foreground
+                                } else {
+                                    theme.muted_foreground
+                                })
                                 .child(meta_row),
                         )
                         .children(self.bottom_right),

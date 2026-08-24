@@ -5,9 +5,8 @@ use std::sync::Arc;
 // ── 2. 第三方与框架库导入 ──
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, AppContext, Entity, FocusHandle, Hsla, KeyBinding, ListAlignment,
-    ListState, MouseButton, MouseDownEvent, SharedString, WeakEntity, Window, actions, div, px,
-    rems,
+    AnyElement, App, AppContext, Entity, FocusHandle, Hsla, KeyBinding, ListAlignment, ListState,
+    MouseButton, MouseDownEvent, SharedString, WeakEntity, Window, actions, div, px, rems,
 };
 use gpui_component::{ActiveTheme, Icon, Theme, h_flex, v_flex};
 use log::{debug, info, warn};
@@ -573,9 +572,9 @@ impl LiteratureListView {
                 if has_tags {
                     card = card.top_right(
                         h_flex().gap_1().children(
-                            tag_colors.iter().map(|(_, color)| {
-                                div().size(rems(0.5)).rounded_full().bg(*color)
-                            }),
+                            tag_colors
+                                .iter()
+                                .map(|(_, color)| div().size(rems(0.5)).rounded_full().bg(*color)),
                         ),
                     );
                 }
