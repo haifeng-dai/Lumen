@@ -7,7 +7,6 @@ use gpui::{ClipboardItem, Context, WeakEntity, Window, div, px, relative, rems};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::Select;
-use gpui_component::text::TextView;
 use gpui_component::{ActiveTheme, Icon, Selectable, h_flex, label::Label, v_flex};
 use i18n::I18nKey;
 use log::debug;
@@ -1315,11 +1314,12 @@ pub fn render_shared_note_card<V: 'static>(
     is_expanded: bool,
     theme: gpui_component::Theme,
     _window: &mut Window,
-    _cx: &mut Context<V>,
+    cx: &mut Context<V>,
     on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
     on_delete: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
     on_toggle_expand: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    let font_size = px(12.0);
     let border_color = theme.border;
     let accent_color = theme.accent;
     let muted_color = theme.muted;
@@ -1412,50 +1412,27 @@ pub fn render_shared_note_card<V: 'static>(
         .child(
             // ── 内容及时间戳区域 ──
             {
-                let font_size = px(12.0);
                 let mut content_container = v_flex().gap_0p5();
                 if is_expanded {
-                    static CONTENT_CACHE: std::sync::LazyLock<
-                        std::sync::Mutex<std::collections::HashMap<String, (i64, String)>>,
-                    > = std::sync::LazyLock::new(|| {
-                        std::sync::Mutex::new(std::collections::HashMap::new())
-                    });
-
-                    let processed_content = {
-                        let mut cache = CONTENT_CACHE.lock().unwrap();
-                        if let Some((updated_at, cached_text)) = cache.get(&note_id) {
-                            if *updated_at == note.updated_at {
-                                cached_text.clone()
-                            } else {
-                                let processed = services::pdf::preprocess_math(&note.content);
-                                cache.insert(note_id.clone(), (note.updated_at, processed.clone()));
-                                processed
-                            }
-                        } else {
-                            let processed = services::pdf::preprocess_math(&note.content);
-                            cache.insert(note_id.clone(), (note.updated_at, processed.clone()));
-                            processed
-                        }
-                    };
-
-                    content_container = content_container.child(
-                        TextView::markdown(
-                            gpui::SharedString::from(format!("note-content-{}", note_id)),
-                            gpui::SharedString::from(processed_content),
-                        )
-                        .style(
-                            gpui_component::text::TextViewStyle::default().heading_font_size(
-                                move |level, _| match level {
-                                    1 => font_size + px(4.),
-                                    2 => font_size + px(2.),
-                                    _ => font_size + px(1.),
-                                },
+                    content_container =
+                        content_container.child(crate::ui::components::render_math_markdown(
+                            format!("note-content-{}", note_id),
+                            &note.content,
+                            px(14.0),
+                            Some(theme.foreground),
+                            Some(
+                                gpui_component::text::TextViewStyle::default().heading_font_size(
+                                    move |level, _| match level {
+                                        1 => px(16.),
+                                        2 => px(15.),
+                                        3 => px(14.),
+                                        4 => px(13.),
+                                        _ => px(12.),
+                                    },
+                                ),
                             ),
-                        )
-                        .selectable(true)
-                        .text_size(font_size)
-                        .text_color(theme.foreground),
-                    );
+                            cx,
+                        ));
                 } else {
                     content_container = content_container.child(
                         Label::new(note.content.clone())

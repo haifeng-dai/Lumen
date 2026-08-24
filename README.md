@@ -1,84 +1,77 @@
-# 🌱 Lumen
+# Lumen
 
 <p align="center">
-  <strong>A next-gen lightning-fast, lightweight reference manager built with Rust & GPUI</strong>
+  <strong>A lightning-fast, lightweight reference manager built with Rust & GPUI</strong>
 </p>
 
 <p align="center">
-  <a href="#-core-features">Core Features</a> •
-  <a href="#-why-lumen">Why Lumen</a> •
-  <a href="#-download">Download</a> •
-  <a href="#-contributing">Contributing</a>
+  <a href="#core-features">Core Features</a> •
+  <a href="#design-philosophy">Design Philosophy</a> •
+  <a href="#known-issues">Known Issues</a> •
+  <a href="#license">License</a>
 </p>
 
 ---
 
-Lumen was born from a simple pain point: academic software has become too bloated. Zotero is feature-rich but resource-heavy, and its UI grows sluggish over time. EndNote and other traditional tools have PDF reading experiences stuck in the last century.
+Lumen is designed for researchers seeking a fast, minimalist, and responsive reference management and reading tool.
 
-In this new **vibe coding** era, we decided to build something truly good with a modern tech stack. Lumen rejects the bloat of Electron and other dynamic runtimes. It's built from the ground up with **Rust** and the **GPUI** framework (a high-performance GPU-accelerated UI framework by the Zed editor team), designed to deliver a **fast, lightweight, and modern** research experience.
-
----
-
-## ✨ Core Features
-
-### 📖 Native PDF Reader (GPU Hardware Accelerated)
-
-- **Buttery smooth:** Full hardware acceleration for zooming, scrolling, and page-turning that far outperforms traditional PDF engines.
-- **Deep interaction:** Cross-page text selection, powerful global text search, and high-quality highlighting and annotation.
-
-### 📚 Literature & Citation Management
-
-- **Smart metadata parsing:** Auto-fetch detailed metadata via DOI and other academic data sources — no manual entry needed.
-- **Easy citation export:** Full BibTeX (`.bib`), IEEE and Elsevier citation support, seamless integration with academic paper citations.
-
-### 🌐 Multi-channel Cloud Sync
-
-- **WebDAV support:** Easily connect your trusted cloud storage (Nutstore, InfiniCLOUD, etc.) for seamless PDF syncing.
-- **Multi-device consistency:** MySQL-backed storage architecture ensures strong data consistency across devices — no more sync conflicts.
-
-### 🌍 Smart Translation Engine
-
-- **Immersive reading:** Built-in multi-language translation engine integrated into your research reading workflow. Current release prioritizes **English-to-Chinese** translation for barrier-free reading of international papers.
-
-### 💻 Pure Native, Full Platform Coverage
-
-No Electron baggage — pure native performance:
-
-- **Windows:** Standard installer (`.exe`) and portable edition (`.zip`).
-- **macOS (ARM64):** Native Apple Silicon support.
-- **macOS (x86_64):** Intel Mac support (*experimental*).
-- **Linux:** Debian/Ubuntu package (`.deb`).
+By rejecting web-wrapper runtimes and leveraging modern systems programming, Lumen is built from the ground up with **Rust** and the **GPUI** framework (the GPU-accelerated UI framework powering the Zed editor). It is dedicated to delivering a **lightning-fast, lightweight, and distraction-free** research workflow.
 
 ---
 
-## ⚡ Why Lumen?
+## Core Features
 
-| Feature | **Lumen** 🌱 | Zotero | EndNote |
-| :--- | :--- | :--- | :--- |
-| **Tech Stack** | **Rust + GPUI** | JavaScript + XULRunner | C++ / Legacy UI |
-| **Memory & Resource Usage** | **Minimal (pure native, no virtual render layer)** | High (based on old Firefox engine) | Moderate |
-| **Modern UI** | **Yes (Modern & Minimalist)** | Dated | Traditional |
+### GPU-Accelerated Native PDF Reader
+
+- **Hardware Rasterization:** Pure native rendering engine powered by GPU hardware acceleration, delivering fluid 60+ FPS continuous scrolling, dynamic scaling, and rapid page-flipping.
+- **Deep Document Interaction:** Smooth multi-page text selection, high-precision search with instant result navigation, and rich color-coded highlight/underline annotations.
+- **Hierarchical Navigation:** Document outline tree, synchronized visual thumbnail strip with text preview, and quick bookmarking.
+
+### Picture-in-Picture (PiP) Reading & Comparison
+
+- **Floating Pin Windows:** Pin arbitrary figures, tables, formulas, or full pages as floating reference overlays while reading subsequent text.
+- **Hardware-Smooth Scaling & Dynamic Re-rendering:** Interactive free dragging, resizing, and smooth hardware zooming with tiered high-resolution re-rendering for pixel-crisp clarity.
+- **Cross-Location Comparison:** Keep crucial context (such as architecture diagrams or mathematical proofs) always in view without constantly scrolling back and forth.
+
+### AI Research Assistant & Document Analysis
+
+- **Context-Aware Dialogue:** Multi-turn conversational assistant with full paper context awareness, supporting customized system prompts and message rollbacks.
+- **AI Summary & Note Generation:** One-click generation of structured abstracts, methodology breakdowns, and takeaway notes directly integrated into the literature note library.
+- **Multi-Session Management:** Maintain multiple concurrent conversation sessions per literature item for exploring different research angles.
+
+### Literature & Citation Management
+
+- **Automated Metadata Extraction:** Instant bibliographic metadata parsing and completion from local PDF files, DOI identifiers, and arXiv links.
+- **Multi-Level Organization:** Infinite-depth hierarchical collection tree, flexible multi-tagging, reading progress tracking, and full-text search across library metadata.
+- **Manuscript-Ready Export:** Standardized citation exports supporting BibTeX (`.bib`), IEEE, Elsevier, and APA formats.
+
+### Multi-Platform Cloud Synchronization
+
+- **Hybrid Synchronization Architecture:** Independent decoupled synchronization between file attachments and relational metadata.
+- **WebDAV Attachment Storage:** Connect private WebDAV endpoints or commercial cloud storage (Nutstore, InfiniCLOUD, Nextcloud, etc.) for cross-device PDF sync.
+- **Relational Consistency Engine:** Multi-device relational database synchronization with deterministic conflict resolution to ensure data integrity.
+
+### Integrated Translation & Native Cross-Platform
+
+- **In-Reader Translation:** Zero-friction paragraph and text selection translation directly embedded into the document workspace.
+- **Pure Native Distribution:** Lightweight distribution with zero Chromium/Node.js overhead across Windows (x64), macOS (Apple Silicon / Intel), and Linux (Debian/Ubuntu).
 
 ---
 
-## 🚀 Download
+## Design Philosophy
 
-Head to the [Releases page](https://github.com/LumenLib/Lumen/releases) to download the latest version for your platform.
-
-> ⚠️ **Note:** This project is currently in pre-release. Core features are ready, but you may encounter rough edges due to differences in system environments and complex PDF formats. Early feedback is welcome!
-
----
-
-## 🤝 Contributing
-
-All forms of contribution are welcome! Bug reports, feature suggestions, and pull requests are all appreciated.
-
-If you encounter crashes or rough experiences on your specific setup, don't hesitate to open an Issue. Let's shape Lumen into the ultimate tool for researchers!
+- **Zero Perceptible Latency:** Native compilation with GPU rasterization ensures immediate response during navigation and reading.
+- **Minimal Resource Footprint:** Low memory footprint and instant startup times.
+- **Focused Simplicity:** Clean, distraction-free interface designed to keep focus strictly on reading and research.
 
 ---
 
-## 📄 License
+## Known Issues
+
+- **macOS PDF Render Memory Deallocation:** Due to how image and texture memory caching is handled in the upstream GPUI framework on macOS, rasterized PDF page memory may not be released immediately upon closing documents. This can cause higher memory consumption during extended multi-document reading sessions. We are actively tracking upstream developments and working on downstream memory eviction optimizations.
+
+---
+
+## License
 
 This project is licensed under the MIT License.
-
-Thanks for being part of Lumen's journey! If this project helps your research, give us a star 🌟!

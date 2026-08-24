@@ -1,7 +1,7 @@
 use components::IconName;
 use gpui::prelude::*;
 use gpui::{Context, Window, div, px};
-use gpui_component::text::{TextView, TextViewStyle};
+use gpui_component::text::TextViewStyle;
 use gpui_component::{ActiveTheme, Icon, h_flex, label::Label, v_flex};
 use i18n::{I18nKey, Language};
 
@@ -118,16 +118,12 @@ impl gpui::Render for StreamingBubbleView {
                                         .pl_2()
                                         .border_l_1()
                                         .border_color(theme.muted_foreground.opacity(0.3))
-                                        .child(
-                                            TextView::markdown(
-                                                gpui::SharedString::from(
-                                                    "chat-reasoning-streaming",
-                                                ),
-                                                gpui::SharedString::from(
-                                                    services::pdf::preprocess_math(r),
-                                                ),
-                                            )
-                                            .style(TextViewStyle::default().heading_font_size(
+                                        .child(crate::ui::components::render_math_markdown(
+                                            "chat-reasoning-streaming",
+                                            r,
+                                            px(13.),
+                                            Some(theme.muted_foreground),
+                                            Some(TextViewStyle::default().heading_font_size(
                                                 |level, _| match level {
                                                     1 => px(16.),
                                                     2 => px(15.),
@@ -135,34 +131,32 @@ impl gpui::Render for StreamingBubbleView {
                                                     4 => px(13.),
                                                     _ => px(12.),
                                                 },
-                                            ))
-                                            .selectable(true)
-                                            .text_size(px(13.))
-                                            .text_color(theme.muted_foreground),
-                                        ),
+                                            )),
+                                            cx,
+                                        )),
                                 )
                             }),
                     )
                 })
                 .child(
-                    div().relative().child(
-                        TextView::markdown(
-                            gpui::SharedString::from("chat-msg-streaming"),
-                            gpui::SharedString::from(services::pdf::preprocess_math(&cursor)),
-                        )
-                        .style(
-                            TextViewStyle::default().heading_font_size(|level, _| match level {
-                                1 => CHAT_BODY_FONT_SIZE + px(8.),
-                                2 => CHAT_BODY_FONT_SIZE + px(6.),
-                                3 => CHAT_BODY_FONT_SIZE + px(4.),
-                                4 => CHAT_BODY_FONT_SIZE + px(2.),
-                                _ => CHAT_BODY_FONT_SIZE + px(1.),
-                            }),
-                        )
-                        .selectable(true)
-                        .text_size(CHAT_BODY_FONT_SIZE)
-                        .text_color(theme.foreground),
-                    ),
+                    div()
+                        .relative()
+                        .child(crate::ui::components::render_math_markdown(
+                            "chat-msg-streaming",
+                            &cursor,
+                            CHAT_BODY_FONT_SIZE,
+                            Some(theme.foreground),
+                            Some(TextViewStyle::default().heading_font_size(
+                                |level, _| match level {
+                                    1 => CHAT_BODY_FONT_SIZE + px(8.),
+                                    2 => CHAT_BODY_FONT_SIZE + px(6.),
+                                    3 => CHAT_BODY_FONT_SIZE + px(4.),
+                                    4 => CHAT_BODY_FONT_SIZE + px(2.),
+                                    _ => CHAT_BODY_FONT_SIZE + px(1.),
+                                },
+                            )),
+                            cx,
+                        )),
                 ),
         )
     }

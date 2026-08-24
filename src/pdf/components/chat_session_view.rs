@@ -10,7 +10,7 @@ use gpui::{
 use gpui_component::Root;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use gpui_component::text::{TextView, TextViewStyle};
+use gpui_component::text::TextViewStyle;
 use gpui_component::{ActiveTheme, Disableable, Icon, h_flex, label::Label, v_flex};
 use i18n::{I18nKey, Language};
 use log::debug;
@@ -515,36 +515,20 @@ impl ChatSessionView {
                                             .border_l_1()
                                             .border_color(theme.muted_foreground.opacity(0.3))
                                             .child(
-                                                div()
-                                                    .w_full()
-                                                    .child(
-                                                        TextView::markdown(
-                                                            gpui::SharedString::from(format!(
-                                                                "chat-reasoning-{}",
-                                                                created_at
-                                                            )),
-                                                            gpui::SharedString::from(
-                                                                services::pdf::preprocess_math(r),
-                                                            ),
-                                                        )
-                                                        .style(
-                                                            TextViewStyle::default()
-                                                                .heading_font_size(|level, _| {
-                                                                    match level {
-                                                                        1 => px(16.),
-                                                                        2 => px(15.),
-                                                                        3 => px(14.),
-                                                                        4 => px(13.),
-                                                                        _ => px(12.),
-                                                                    }
-                                                                }),
-                                                        )
-                                                        .selectable(true)
-                                                        .text_size(px(13.))
-                                                        .text_color(
-                                                            theme.muted_foreground,
-                                                        ),
-                                                    ),
+                                                crate::ui::components::render_math_markdown(
+                                                    format!("chat-reasoning-{}", created_at),
+                                                    r,
+                                                    px(13.),
+                                                    Some(theme.muted_foreground),
+                                                    Some(TextViewStyle::default().heading_font_size(|level, _| match level {
+                                                        1 => px(16.),
+                                                        2 => px(15.),
+                                                        3 => px(14.),
+                                                        4 => px(13.),
+                                                        _ => px(12.),
+                                                    })),
+                                                    cx,
+                                                ),
                                             ),
                                     )
                                 }),
@@ -749,49 +733,20 @@ impl ChatSessionView {
                                             })
                                     )
                                 })
-                                .child({
-                                    static CHAT_CONTENT_CACHE: std::sync::LazyLock<
-                                        std::sync::Mutex<std::collections::HashMap<String, String>>,
-                                    > = std::sync::LazyLock::new(|| {
-                                        std::sync::Mutex::new(std::collections::HashMap::new())
-                                    });
-
-                                    let cache_key = format!(
-                                        "chat-msg-{}-{}-l{}",
-                                        msg.role, msg.created_at, display_content.len()
-                                    );
-
-                                    let processed_content = {
-                                        let mut cache = CHAT_CONTENT_CACHE.lock().unwrap();
-                                        if let Some(cached_text) = cache.get(&cache_key) {
-                                            cached_text.clone()
-                                        } else {
-                                            let processed = services::pdf::preprocess_math(&display_content);
-                                            cache.insert(cache_key, processed.clone());
-                                            processed
-                                        }
-                                    };
-
-                                    TextView::markdown(
-                                        gpui::SharedString::from(format!(
-                                            "chat-msg-{}-{}",
-                                            msg.role, msg.created_at
-                                        )),
-                                        gpui::SharedString::from(processed_content),
-                                    )
-                                    .style(
-                                        TextViewStyle::default().heading_font_size(|level, _| match level {
-                                            1 => CHAT_BODY_FONT_SIZE + px(8.),
-                                            2 => CHAT_BODY_FONT_SIZE + px(6.),
-                                            3 => CHAT_BODY_FONT_SIZE + px(4.),
-                                            4 => CHAT_BODY_FONT_SIZE + px(2.),
-                                            _ => CHAT_BODY_FONT_SIZE + px(1.),
-                                        }),
-                                    )
-                                    .selectable(true)
-                                    .text_size(CHAT_BODY_FONT_SIZE)
-                                    .text_color(theme.foreground)
-                                })
+                                .child(crate::ui::components::render_math_markdown(
+                                    format!("chat-msg-{}-{}", msg.role, msg.created_at),
+                                    &display_content,
+                                    CHAT_BODY_FONT_SIZE,
+                                    Some(theme.foreground),
+                                    Some(TextViewStyle::default().heading_font_size(|level, _| match level {
+                                        1 => CHAT_BODY_FONT_SIZE + px(8.),
+                                        2 => CHAT_BODY_FONT_SIZE + px(6.),
+                                        3 => CHAT_BODY_FONT_SIZE + px(4.),
+                                        4 => CHAT_BODY_FONT_SIZE + px(2.),
+                                        _ => CHAT_BODY_FONT_SIZE + px(1.),
+                                    })),
+                                    cx,
+                                ))
                                 // 用户消息的编辑和回退按钮浮在右上角，鼠标 hover 时显示（2/3 尺寸缩放）
                                 .when(is_user && !msg.id.is_empty(), |this| {
                                     this.child(

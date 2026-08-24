@@ -20,6 +20,7 @@ translate = { path = "crates/translate" }
 ai = { path = "crates/ai" }
 file = { path = "crates/file" }
 components = { path = "crates/components" }
+latex = { path = "crates/latex" }
 anyhow = "1.0.100"
 chrono = "0.4"
 futures-util = "0.3"
@@ -49,6 +50,7 @@ translate = { workspace = true }
 ai = { workspace = true }
 file = { workspace = true }
 components = { workspace = true }
+latex = { workspace = true }
 anyhow = { workspace = true }
 arboard = "3"
 image = "0.25"
