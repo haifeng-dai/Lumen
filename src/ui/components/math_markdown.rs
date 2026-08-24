@@ -300,50 +300,52 @@ pub fn render_math_markdown(
                     .overflow_x_hidden()
                     .py_2()
                     .child(
-                    v_flex()
-                        .w_full()
-                        .items_center()
-                        .child(
-                            MathElement::new(math)
-                                .text_size(font_size + px(2.0))
-                                .color(text_color)
-                                .display(true),
-                        )
-                        .child(
-                            h_flex().w_full().justify_end().pt_0p5().child(
-                                div()
-                                    .id(gpui::SharedString::from(format!(
-                                        "copy-latex-btn-{}",
-                                        seg_id
-                                    )))
-                                    .cursor_pointer()
-                                    .p_0p5()
-                                    .rounded_sm()
-                                    .hover(|s| s.bg(theme.muted.opacity(0.4)))
-                                    .on_click({
-                                        let math_src = math_src.clone();
-                                        let seg_id = seg_id.clone();
-                                        move |_, _, cx| {
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                                math_src.clone(),
-                                            ));
-                                            crate::app_state::ui::UiState::update(cx, |s| {
-                                                s.copied_formula_id = Some(seg_id.clone());
-                                            });
+                        v_flex()
+                            .w_full()
+                            .items_center()
+                            .child(
+                                MathElement::new(math)
+                                    .text_size(font_size + px(2.0))
+                                    .color(text_color)
+                                    .display(true),
+                            )
+                            .child(
+                                h_flex().w_full().justify_end().pt_0p5().child(
+                                    div()
+                                        .id(gpui::SharedString::from(format!(
+                                            "copy-latex-btn-{}",
+                                            seg_id
+                                        )))
+                                        .cursor_pointer()
+                                        .p_0p5()
+                                        .rounded_sm()
+                                        .hover(|s| s.bg(theme.muted.opacity(0.4)))
+                                        .on_click({
+                                            let math_src = math_src.clone();
+                                            let seg_id = seg_id.clone();
+                                            move |_, _, cx| {
+                                                cx.write_to_clipboard(
+                                                    gpui::ClipboardItem::new_string(
+                                                        math_src.clone(),
+                                                    ),
+                                                );
+                                                crate::app_state::ui::UiState::update(cx, |s| {
+                                                    s.copied_formula_id = Some(seg_id.clone());
+                                                });
 
-                                            cx.spawn({
-                                                let seg_id = seg_id.clone();
-                                                move |cx: &mut gpui::AsyncApp| {
-                                                    let cx = cx.clone();
-                                                    async move {
-                                                        cx.background_executor()
+                                                cx.spawn({
+                                                    let seg_id = seg_id.clone();
+                                                    move |cx: &mut gpui::AsyncApp| {
+                                                        let cx = cx.clone();
+                                                        async move {
+                                                            cx.background_executor()
                                                             .timer(
                                                                 std::time::Duration::from_millis(
                                                                     1500,
                                                                 ),
                                                             )
                                                             .await;
-                                                        let _ = cx.update(|cx| {
+                                                            let _ = cx.update(|cx| {
                                                             crate::app_state::ui::UiState::update(
                                                                 cx,
                                                                 |s| {
@@ -356,30 +358,28 @@ pub fn render_math_markdown(
                                                                 },
                                                             );
                                                         });
+                                                        }
                                                     }
-                                                }
-                                            })
-                                            .detach();
-                                        }
-                                    })
-                                    .child(
-                                        Icon::new(if is_copied {
-                                            IconName::Check
-                                        } else {
-                                            IconName::Copy
+                                                })
+                                                .detach();
+                                            }
                                         })
-                                        .size(px(11.0))
-                                        .text_color(
-                                            if is_copied {
+                                        .child(
+                                            Icon::new(if is_copied {
+                                                IconName::Check
+                                            } else {
+                                                IconName::Copy
+                                            })
+                                            .size(px(11.0))
+                                            .text_color(if is_copied {
                                                 theme.primary
                                             } else {
                                                 theme.muted_foreground
-                                            },
+                                            }),
                                         ),
-                                    ),
+                                ),
                             ),
-                        ),
-                );
+                    );
             }
         }
     }

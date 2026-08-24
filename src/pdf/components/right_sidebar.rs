@@ -3,7 +3,7 @@ use crate::pdf::components::chat_session_view::ChatSessionView;
 use crate::pdf::types::{RightSidebarTab, TOOLBAR_HEIGHT_REMS};
 use components::IconName;
 use gpui::prelude::*;
-use gpui::{ClipboardItem, Context, WeakEntity, Window, div, px, relative, rems};
+use gpui::{ClipboardItem, Context, WeakEntity, Window, div, px, rems};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::Select;
@@ -346,12 +346,15 @@ impl PdfReaderView {
                                         .into_any_element()
                                 }
                                 Some(res) => match &res.translated {
-                                    Some(t) => Label::new(t.clone())
-                                        .w_full()
-                                        .text_size(px(self.translation_font_size))
-                                        .line_height(relative(1.5))
-                                        .text_color(theme_foreground)
-                                        .into_any_element(),
+                                    Some(t) => crate::ui::components::render_math_markdown(
+                                        "pdf-translation-content",
+                                        t,
+                                        px(self.translation_font_size),
+                                        Some(theme_foreground),
+                                        None,
+                                        cx,
+                                    )
+                                    .into_any_element(),
                                     None => Label::new(i18n::t(
                                         I18nKey::TranslationPending,
                                         self.language,

@@ -70,8 +70,8 @@ impl IntoElement for MathElement {
                     let top = container_h - depth - position.y - font_size;
 
                     // 智能正斜体与字体判定：变量字母（包括拉丁 a-z、希腊字母 α, β, θ 等）使用 KaTeX_Math 斜体，数字、函数名、运算符与括号使用 KaTeX_Main 正体
-                    let is_variable = text.chars().next().map_or(false, |c| c.is_alphabetic())
-                        && text.len() <= 4; // 排除长函数名如 sin, cos, softmax
+                    let is_variable =
+                        text.chars().next().map_or(false, |c| c.is_alphabetic()) && text.len() <= 4; // 排除长函数名如 sin, cos, softmax
 
                     let font_fam = if is_variable {
                         crate::font::KATEX_MATH_FONT
