@@ -44,6 +44,7 @@ pub struct ChatSessionView {
 
     message_siblings: std::collections::HashMap<String, Vec<String>>,
     cached_attachments: Vec<models::Attachment>,
+    copied_message_id: Option<String>,
 }
 
 impl ChatSessionView {
@@ -81,6 +82,7 @@ impl ChatSessionView {
             editing_input_state: None,
             message_siblings: std::collections::HashMap::new(),
             cached_attachments: Vec::new(),
+            copied_message_id: None,
         };
         view.reload_siblings();
         view.cached_attachments = view
@@ -747,99 +749,235 @@ impl ChatSessionView {
                                     })),
                                     cx,
                                 ))
-                                // 用户消息的编辑和回退按钮浮在右上角，鼠标 hover 时显示（2/3 尺寸缩放）
-                                .when(is_user && !msg.id.is_empty(), |this| {
+                                .when(!is_user && !msg.content.is_empty(), |this| {
+                                    let msg_content = msg.content.clone();
+                                    let msg_id = if msg.id.is_empty() {
+                                        format!("msg-{}", msg.created_at)
+                                    } else {
+                                        msg.id.clone()
+                                    };
+                                    let is_copied = self.copied_message_id.as_deref() == Some(&msg_id);
+
                                     this.child(
                                         h_flex()
-                                            .absolute()
-                                            .bottom_0()
-                                            .right_0()
-                                            .gap_1()
-                                            .p_1()
-                                            .invisible()
-                                            .group_hover("chat-bubble-hover-group", |style| style.visible())
+                                            .w_full()
+                                            .justify_start()
+                                            .pt_1()
                                             .child(
                                                 div()
-                                                    .id(gpui::SharedString::from(format!("edit-btn-{}", msg.id)))
+                                                    .id(gpui::SharedString::from(format!("copy-msg-btn-{}", msg_id)))
                                                     .cursor_pointer()
-                                                    .on_mouse_down(
-                                                        gpui::MouseButton::Left,
-                                                        cx.listener({
-                                                            let msg_id = msg.id.clone();
-                                                            let msg_content = msg.content.clone();
-                                                            move |this, _, window, cx| {
-                                                                this.editing_message_id = Some(msg_id.clone());
-                                                                let content_clone = msg_content.clone();
-                                                                this.editing_input_state = Some(cx.new(|cx| {
-                                                                    InputState::new(window, cx).default_value(content_clone)
-                                                                }));
-                                                                cx.notify();
-                                                            }
-                                                        }),
-                                                    )
-                                                    .child(
-                                                        Icon::new(IconName::Annotations)
-                                                            .size(px(12.0))
-                                                            .text_color(theme.primary)
-                                                    )
-                                            )
-                                            .child(
-                                                div()
-                                                    .id(gpui::SharedString::from(format!("rollback-btn-{}", msg.id)))
-                                                    .cursor_pointer()
-                                                    .on_mouse_down(
-                                                        gpui::MouseButton::Left,
-                                                        cx.listener({
-                                                            let msg_id = msg.id.clone();
-                                                            let msg_content = msg.content.clone();
-                                                            let msg_attachments = msg.attachments.clone();
-                                                            let session_id = self.session_id.clone();
-                                                            move |this, _, window, cx| {
-                                                                // 1. 将文本装填到底部对话输入框
-                                                                if let Some(ref input_state) = this.chat_input_state {
-                                                                    input_state.update(cx, |s, cx| {
-                                                                        s.set_value(&msg_content, window, cx);
-                                                                    });
-                                                                }
+                                                    .p_0p5()
+                                                    .rounded_sm()
+                                                    .hover(|s| s.bg(theme.muted.opacity(0.4)))
+                                                    .on_click(cx.listener({
+                                                        let msg_id = msg_id.clone();
+                                                        let msg_content = msg_content.clone();
+                                                        move |this, _, window, cx| {
+                                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(msg_content.clone()));
+                                                            this.copied_message_id = Some(msg_id.clone());
+                                                            cx.notify();
 
-                                                                // 2. 恢复当时选中的文件附件状态
-                                                                this.chat_selected_attachments.clear();
-                                                                if !msg_attachments.is_empty() {
-                                                                    let current_literature_attachments = this
-                                                                        .delegate
-                                                                        .as_ref()
-                                                                        .map(|d| d.current_literature_attachments())
-                                                                        .unwrap_or_default();
-                                                                    for fp in &msg_attachments {
-                                                                        if let Some(att) = current_literature_attachments.iter().find(|a| &a.file_path == fp) {
-                                                                            this.chat_selected_attachments.push(att.clone());
-                                                                        }
+                                                            let window_handle = window.window_handle();
+                                                            // 1.5 秒后安全更新窗口状态恢复复制图标
+                                                            cx.spawn({
+                                                                let msg_id = msg_id.clone();
+                                                                move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                                                                    let mut cx = cx.clone();
+                                                                    async move {
+                                                                        cx.background_executor()
+                                                                            .timer(std::time::Duration::from_millis(1500))
+                                                                            .await;
+                                                                        let _ = cx.update_window(window_handle, |_, _, cx| {
+                                                                            let _ = this.update(cx, |this, cx| {
+                                                                                if this.copied_message_id.as_deref() == Some(&msg_id) {
+                                                                                    this.copied_message_id = None;
+                                                                                    cx.notify();
+                                                                                }
+                                                                            });
+                                                                        });
                                                                     }
-                                                                    this.chat_show_attachment_picker = true;
                                                                 }
-
-                                                                // 3. 执行删除操作
-                                                                if let Some(ref delegate) = this.delegate {
-                                                                    let _ = delegate.truncate_chat_messages_after(&session_id, &msg_id);
-                                                                    this.chat_messages = delegate.list_chat_messages(&session_id);
-                                                                    this.reload_siblings();
-                                                                    this.list_state.reset(this.chat_messages.len());
-                                                                    cx.notify();
-                                                                }
-                                                            }
-                                                        }),
-                                                    )
+                                                            }).detach();
+                                                        }
+                                                    }))
                                                     .child(
-                                                        Icon::new(IconName::RotateCw)
-                                                            .size(px(12.0))
-                                                            .text_color(theme.primary)
-                                                    )
-                                            )
+                                                        Icon::new(if is_copied {
+                                                            IconName::Check
+                                                        } else {
+                                                            IconName::Copy
+                                                        })
+                                                        .size(px(12.0))
+                                                        .text_color(if is_copied {
+                                                            theme.primary
+                                                        } else {
+                                                            theme.muted_foreground
+                                                        }),
+                                                    ),
+                                            ),
                                     )
                                 })
                         }
                     }),
             )
+            // 用户消息下方的固定工具按钮（编辑、重新提问/回退、复制）
+            .when(is_user && !is_editing && !msg.id.is_empty(), |this| {
+                let msg_id = msg.id.clone();
+                let msg_content = msg.content.clone();
+                let msg_attachments = msg.attachments.clone();
+                let session_id = self.session_id.clone();
+                let is_copied = self.copied_message_id.as_deref() == Some(&msg_id);
+
+                this.child(
+                    h_flex()
+                        .items_center()
+                        .gap_1p5()
+                        .mt_1()
+                        .px_1()
+                        // 复制
+                        .child(
+                            div()
+                                .id(gpui::SharedString::from(format!("copy-user-btn-{}", msg_id)))
+                                .cursor_pointer()
+                                .p_0p5()
+                                .rounded_sm()
+                                .hover(|s| s.bg(theme.muted.opacity(0.4)))
+                                .on_click(cx.listener({
+                                    let msg_id = msg_id.clone();
+                                    let msg_content = msg_content.clone();
+                                    move |this, _, window, cx| {
+                                        // 提取纯用户输入文本（剥离可能存在的引用前缀）
+                                        let pure_text = if msg_content.starts_with("> [PDF 引用]:") {
+                                            if let Some(pos) = msg_content.find("\n\n") {
+                                                msg_content[pos + 2..].trim().to_string()
+                                            } else {
+                                                msg_content.trim_start_matches("> [PDF 引用]:").trim().to_string()
+                                            }
+                                        } else {
+                                            msg_content.clone()
+                                        };
+
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(pure_text));
+                                        this.copied_message_id = Some(msg_id.clone());
+                                        cx.notify();
+
+                                        let window_handle = window.window_handle();
+                                        cx.spawn({
+                                            let msg_id = msg_id.clone();
+                                            move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                                                let mut cx = cx.clone();
+                                                async move {
+                                                    cx.background_executor()
+                                                        .timer(std::time::Duration::from_millis(1500))
+                                                        .await;
+                                                    let _ = cx.update_window(window_handle, |_, _, cx| {
+                                                        let _ = this.update(cx, |this, cx| {
+                                                            if this.copied_message_id.as_deref() == Some(&msg_id) {
+                                                                this.copied_message_id = None;
+                                                                cx.notify();
+                                                            }
+                                                        });
+                                                    });
+                                                }
+                                            }
+                                        }).detach();
+                                    }
+                                }))
+                                .child(
+                                    Icon::new(if is_copied {
+                                        IconName::Check
+                                    } else {
+                                        IconName::Copy
+                                    })
+                                    .size(px(12.0))
+                                    .text_color(if is_copied {
+                                        theme.primary
+                                    } else {
+                                        theme.muted_foreground
+                                    }),
+                                )
+                        )
+                        // 编辑
+                        .child(
+                            div()
+                                .id(gpui::SharedString::from(format!("edit-btn-{}", msg_id)))
+                                .cursor_pointer()
+                                .p_0p5()
+                                .rounded_sm()
+                                .hover(|s| s.bg(theme.muted.opacity(0.4)))
+                                .on_click(cx.listener({
+                                    let msg_id = msg_id.clone();
+                                    let msg_content = msg_content.clone();
+                                    move |this, _, window, cx| {
+                                        this.editing_message_id = Some(msg_id.clone());
+                                        let content_clone = msg_content.clone();
+                                        this.editing_input_state = Some(cx.new(|cx| {
+                                            InputState::new(window, cx).default_value(content_clone)
+                                        }));
+                                        cx.notify();
+                                    }
+                                }))
+                                .child(
+                                    Icon::new(IconName::Annotations)
+                                        .size(px(12.0))
+                                        .text_color(theme.muted_foreground),
+                                )
+                        )
+                        // 回退/重新提问
+                        .child(
+                            div()
+                                .id(gpui::SharedString::from(format!("rollback-btn-{}", msg_id)))
+                                .cursor_pointer()
+                                .p_0p5()
+                                .rounded_sm()
+                                .hover(|s| s.bg(theme.muted.opacity(0.4)))
+                                .on_click(cx.listener({
+                                    let msg_id = msg_id.clone();
+                                    let msg_content = msg_content.clone();
+                                    let msg_attachments = msg_attachments.clone();
+                                    let session_id = session_id.clone();
+                                    move |this, _, window, cx| {
+                                        // 1. 将文本装填到底部对话输入框
+                                        if let Some(ref input_state) = this.chat_input_state {
+                                            input_state.update(cx, |s, cx| {
+                                                s.set_value(&msg_content, window, cx);
+                                            });
+                                        }
+
+                                        // 2. 恢复当时选中的文件附件状态
+                                        this.chat_selected_attachments.clear();
+                                        if !msg_attachments.is_empty() {
+                                            let current_literature_attachments = this
+                                                .delegate
+                                                .as_ref()
+                                                .map(|d| d.current_literature_attachments())
+                                                .unwrap_or_default();
+                                            for fp in &msg_attachments {
+                                                if let Some(att) = current_literature_attachments.iter().find(|a| &a.file_path == fp) {
+                                                    this.chat_selected_attachments.push(att.clone());
+                                                }
+                                            }
+                                            this.chat_show_attachment_picker = true;
+                                        }
+
+                                        // 3. 执行删除操作
+                                        if let Some(ref delegate) = this.delegate {
+                                            let _ = delegate.truncate_chat_messages_after(&session_id, &msg_id);
+                                            this.chat_messages = delegate.list_chat_messages(&session_id);
+                                            this.reload_siblings();
+                                            this.list_state.reset(this.chat_messages.len());
+                                            cx.notify();
+                                        }
+                                    }
+                                }))
+                                .child(
+                                    Icon::new(IconName::RotateCw)
+                                        .size(px(12.0))
+                                        .text_color(theme.muted_foreground),
+                                )
+                        )
+                )
+            })
             // 版本切换指示器（兄弟节点分页器），当且仅当有多版本且不处于编辑状态时在气泡下方显示
             .when(siblings.len() > 1 && !is_editing, |this| {
                 this.child(

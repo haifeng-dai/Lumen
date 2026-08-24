@@ -20,6 +20,7 @@ pub struct UiState {
     pub selected_feed_item_ids: HashSet<String>,
     pub menu_folder_expanded: HashSet<String>,
     pub advanced_search_query: AdvancedSearchQuery,
+    pub copied_formula_id: Option<String>,
 }
 
 impl UiState {
@@ -35,6 +36,7 @@ impl UiState {
             selected_feed_item_ids: HashSet::new(),
             menu_folder_expanded: HashSet::new(),
             advanced_search_query: AdvancedSearchQuery::default(),
+            copied_formula_id: None,
         }
     }
 

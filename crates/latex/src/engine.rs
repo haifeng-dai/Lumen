@@ -108,13 +108,17 @@ impl MathEngine {
 
                 // \left 与 \right 自适应定界符动态拉伸解析
                 if cmd == "left" {
-                    while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+                    while i < chars.len() && chars[i].is_whitespace() {
+                        i += 1;
+                    }
                     let left_delim = if i < chars.len() {
                         let c = chars[i];
                         if c == '\\' {
                             i += 1;
                             let d_start = i;
-                            while i < chars.len() && chars[i].is_alphabetic() { i += 1; }
+                            while i < chars.len() && chars[i].is_alphabetic() {
+                                i += 1;
+                            }
                             let d_cmd: String = chars[d_start..i].iter().collect();
                             if d_cmd.is_empty() && i < chars.len() {
                                 let special_c = chars[i];
@@ -126,11 +130,17 @@ impl MathEngine {
                                     _ => special_c.to_string(),
                                 }
                             } else {
-                                crate::symbols::lookup_symbol(&d_cmd).unwrap_or(&d_cmd).to_string()
+                                crate::symbols::lookup_symbol(&d_cmd)
+                                    .unwrap_or(&d_cmd)
+                                    .to_string()
                             }
                         } else {
                             i += 1;
-                            if c == '.' { String::new() } else { c.to_string() }
+                            if c == '.' {
+                                String::new()
+                            } else {
+                                c.to_string()
+                            }
                         }
                     } else {
                         String::new()
@@ -145,23 +155,32 @@ impl MathEngine {
                     while i < chars.len() {
                         if chars[i] == '\\' {
                             let sub: String = chars[i..].iter().collect();
-                            if sub.starts_with("\\left") && sub.chars().nth(5).map_or(true, |c| !c.is_alphabetic()) {
+                            if sub.starts_with("\\left")
+                                && sub.chars().nth(5).map_or(true, |c| !c.is_alphabetic())
+                            {
                                 depth += 1;
                                 i += 5;
                                 continue;
-                            } else if sub.starts_with("\\right") && sub.chars().nth(6).map_or(true, |c| !c.is_alphabetic()) {
+                            } else if sub.starts_with("\\right")
+                                && sub.chars().nth(6).map_or(true, |c| !c.is_alphabetic())
+                            {
                                 depth -= 1;
                                 if depth == 0 {
                                     body_end = i;
                                     i += 6; // 跳过 \right
-                                    while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+                                    while i < chars.len() && chars[i].is_whitespace() {
+                                        i += 1;
+                                    }
                                     if i < chars.len() {
                                         let rc = chars[i];
                                         if rc == '\\' {
                                             i += 1;
                                             let rd_start = i;
-                                            while i < chars.len() && chars[i].is_alphabetic() { i += 1; }
-                                            let rd_cmd: String = chars[rd_start..i].iter().collect();
+                                            while i < chars.len() && chars[i].is_alphabetic() {
+                                                i += 1;
+                                            }
+                                            let rd_cmd: String =
+                                                chars[rd_start..i].iter().collect();
                                             if rd_cmd.is_empty() && i < chars.len() {
                                                 let special_rc = chars[i];
                                                 i += 1;
@@ -172,11 +191,18 @@ impl MathEngine {
                                                     _ => special_rc.to_string(),
                                                 };
                                             } else {
-                                                right_delim = crate::symbols::lookup_symbol(&rd_cmd).unwrap_or(&rd_cmd).to_string();
+                                                right_delim =
+                                                    crate::symbols::lookup_symbol(&rd_cmd)
+                                                        .unwrap_or(&rd_cmd)
+                                                        .to_string();
                                             }
                                         } else {
                                             i += 1;
-                                            right_delim = if rc == '.' { String::new() } else { rc.to_string() };
+                                            right_delim = if rc == '.' {
+                                                String::new()
+                                            } else {
+                                                rc.to_string()
+                                            };
                                         }
                                     }
                                     break;
@@ -209,7 +235,11 @@ impl MathEngine {
                     let content_start_x = cursor_x;
                     for node in body_layout.nodes {
                         match node {
-                            MathNode::Text { text, font_size, position } => {
+                            MathNode::Text {
+                                text,
+                                font_size,
+                                position,
+                            } => {
                                 nodes.push(MathNode::Text {
                                     text,
                                     font_size,
@@ -219,7 +249,11 @@ impl MathEngine {
                                     },
                                 });
                             }
-                            MathNode::Glyph { glyph_id, font_size, position } => {
+                            MathNode::Glyph {
+                                glyph_id,
+                                font_size,
+                                position,
+                            } => {
                                 nodes.push(MathNode::Glyph {
                                     glyph_id,
                                     font_size,
@@ -265,7 +299,9 @@ impl MathEngine {
 
                 // 矩阵、多行方程与分支环境解析：\begin{env} ... \end{env}
                 if cmd == "begin" {
-                    while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+                    while i < chars.len() && chars[i].is_whitespace() {
+                        i += 1;
+                    }
                     let mut env_name = String::new();
                     if i < chars.len() && chars[i] == '{' {
                         i += 1;
@@ -274,7 +310,9 @@ impl MathEngine {
                             i += 1;
                         }
                         env_name = chars[e_start..i].iter().collect();
-                        if i < chars.len() { i += 1; } // 跳过 '}'
+                        if i < chars.len() {
+                            i += 1;
+                        } // 跳过 '}'
                     }
 
                     let end_tag = format!("\\end{{{}}}", env_name);
@@ -317,13 +355,19 @@ impl MathEngine {
                             current_cell.push(bc);
                             bi += 1;
                         } else if bc == '}' {
-                            if brace_depth > 0 { brace_depth -= 1; }
+                            if brace_depth > 0 {
+                                brace_depth -= 1;
+                            }
                             current_cell.push(bc);
                             bi += 1;
                         } else if brace_depth == 0 && bc == '&' {
                             current_row.push(std::mem::take(&mut current_cell));
                             bi += 1;
-                        } else if brace_depth == 0 && bc == '\\' && bi + 1 < b_chars.len() && b_chars[bi + 1] == '\\' {
+                        } else if brace_depth == 0
+                            && bc == '\\'
+                            && bi + 1 < b_chars.len()
+                            && b_chars[bi + 1] == '\\'
+                        {
                             current_row.push(std::mem::take(&mut current_cell));
                             raw_rows.push(std::mem::take(&mut current_row));
                             bi += 2;
@@ -350,10 +394,18 @@ impl MathEngine {
                         let mut row_heights = vec![px(0.0); row_count];
 
                         let is_cases = env_name == "cases";
-                        let is_aligned = env_name == "aligned" || env_name == "align" || env_name == "align*";
+                        let is_aligned =
+                            env_name == "aligned" || env_name == "align" || env_name == "align*";
 
-                        let cell_font_size = px(f32::from(text_size) * if is_cases { 0.95 } else { 0.9 });
-                        let col_gap = px(if is_cases { 14.0 } else if is_aligned { 8.0 } else { 12.0 } * sub_scale);
+                        let cell_font_size =
+                            px(f32::from(text_size) * if is_cases { 0.95 } else { 0.9 });
+                        let col_gap = px(if is_cases {
+                            14.0
+                        } else if is_aligned {
+                            8.0
+                        } else {
+                            12.0
+                        } * sub_scale);
                         let row_gap = px(6.0 * sub_scale);
 
                         for (r_idx, row) in raw_rows.iter().enumerate() {
@@ -361,16 +413,19 @@ impl MathEngine {
                             for (c_idx, cell_str) in row.iter().enumerate() {
                                 let l = Self::layout(cell_str.trim(), cell_font_size, false)?;
                                 col_widths[c_idx] = col_widths[c_idx].max(l.width);
-                                row_heights[r_idx] = row_heights[r_idx].max(l.height.max(px(14.0 * sub_scale)));
+                                row_heights[r_idx] =
+                                    row_heights[r_idx].max(l.height.max(px(14.0 * sub_scale)));
                                 row_cells.push(l);
                             }
                             cell_layouts.push(row_cells);
                         }
 
-                        let total_matrix_w: Pixels = col_widths.iter().copied().fold(px(0.0), |a, b| a + b)
-                            + col_gap * col_count.saturating_sub(1);
-                        let total_matrix_h: Pixels = row_heights.iter().copied().fold(px(0.0), |a, b| a + b)
-                            + row_gap * row_count.saturating_sub(1);
+                        let total_matrix_w: Pixels =
+                            col_widths.iter().copied().fold(px(0.0), |a, b| a + b)
+                                + col_gap * col_count.saturating_sub(1);
+                        let total_matrix_h: Pixels =
+                            row_heights.iter().copied().fold(px(0.0), |a, b| a + b)
+                                + row_gap * row_count.saturating_sub(1);
 
                         let baseline_shift = -total_matrix_h / 2.0 + px(5.0 * sub_scale);
 
@@ -424,7 +479,11 @@ impl MathEngine {
 
                                 for node in cell_layout.nodes {
                                     match node {
-                                        MathNode::Text { text, font_size, position } => {
+                                        MathNode::Text {
+                                            text,
+                                            font_size,
+                                            position,
+                                        } => {
                                             nodes.push(MathNode::Text {
                                                 text,
                                                 font_size,
@@ -434,7 +493,11 @@ impl MathEngine {
                                                 },
                                             });
                                         }
-                                        MathNode::Glyph { glyph_id, font_size, position } => {
+                                        MathNode::Glyph {
+                                            glyph_id,
+                                            font_size,
+                                            position,
+                                        } => {
                                             nodes.push(MathNode::Glyph {
                                                 glyph_id,
                                                 font_size,
