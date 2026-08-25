@@ -69,8 +69,10 @@ impl super::PdfReaderView {
         )
     }
 
-    pub fn is_content_interacting(&self) -> bool {
-        self.is_mouse_down
+    pub fn is_interacting(&self) -> bool {
+        self.is_dragging_scrollbar
+            || self.is_dragging_thumbnail_scrollbar
+            || self.is_panning
             || self.annotation_drag.is_some()
             || self.dragging_pin.is_some()
             || self.resizing_pin.is_some()
@@ -82,10 +84,12 @@ impl super::PdfReaderView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_content_interacting() {
-            self.handle_content_mouse_move(event, window, cx);
+        if self.dragging_pin.is_some() || self.resizing_pin.is_some() {
+            self.handle_pin_mouse_move(event, window, cx);
         } else if self.is_dragging_scrollbar || self.is_dragging_thumbnail_scrollbar {
             self.handle_root_mouse_move(event, window, cx);
+        } else if self.is_mouse_down || self.is_panning || self.annotation_drag.is_some() {
+            self.handle_content_mouse_move(event, window, cx);
         }
     }
 
@@ -95,10 +99,13 @@ impl super::PdfReaderView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_content_interacting() {
+        if self.dragging_pin.is_some() || self.resizing_pin.is_some() {
+            self.handle_pin_mouse_up(cx);
+        }
+        if self.is_mouse_down || self.annotation_drag.is_some() {
             self.handle_content_mouse_up(event.position, window, cx);
-            self.is_panning = false;
-        } else if self.is_dragging_scrollbar || self.is_dragging_thumbnail_scrollbar {
+        }
+        if self.is_dragging_scrollbar || self.is_dragging_thumbnail_scrollbar || self.is_panning {
             self.handle_root_mouse_up(cx);
         }
     }

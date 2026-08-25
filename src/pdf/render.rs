@@ -2,7 +2,7 @@ use ::components::IconName;
 use gpui::prelude::*;
 use gpui::{
     App, ClipboardItem, Context, DragMoveEvent, FocusHandle, Focusable, KeyDownEvent, ListOffset,
-    MouseButton, Render, Window, div, px, rems,
+    MouseButton, MouseUpEvent, Render, Window, deferred, div, px, rems,
 };
 use gpui_component::{ActiveTheme, Icon, button::Button, h_flex, label::Label, v_flex};
 
@@ -277,11 +277,9 @@ impl Render for PdfReaderView {
             .relative()
             .bg(theme.background)
             .track_focus(&self.focus_handle)
-            .on_mouse_move(
-                cx.listener(|this, event, window, cx| {
-                    this.handle_root_mouse_move(event, window, cx)
-                }),
-            )
+            .on_mouse_move(cx.listener(|this, event, window, cx| {
+                this.handle_global_mouse_move(event, window, cx)
+            }))
             .on_drag_move::<DraggedSidebar>(cx.listener(
                 |this, event: &DragMoveEvent<DraggedSidebar>, window, cx| {
                     let viewport_width = window.viewport_size().width;
@@ -336,8 +334,8 @@ impl Render for PdfReaderView {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _, _window, cx| {
-                    this.handle_root_mouse_up(cx);
+                cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.handle_global_mouse_up(event, window, cx);
                 }),
             )
             .child(
@@ -433,49 +431,26 @@ impl Render for PdfReaderView {
                         this.child(editor)
                     }),
             )
-            .when(
-                self.dragging_pin.is_some() || self.resizing_pin.is_some(),
-                |this| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .inset_0()
-                            .cursor_default()
-                            .on_mouse_move(cx.listener(|this, event, window, cx| {
-                                this.handle_pin_mouse_move(event, window, cx);
-                            }))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.handle_pin_mouse_up(cx);
-                                    cx.notify();
-                                }),
-                            ),
-                    )
-                },
-            )
-            .when(
-                self.is_dragging_scrollbar
-                    || self.is_dragging_thumbnail_scrollbar
-                    || self.is_panning,
-                |this| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .inset_0()
-                            .cursor_default()
-                            .on_mouse_move(cx.listener(|this, event, window, cx| {
-                                this.handle_root_mouse_move(event, window, cx);
-                            }))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.handle_root_mouse_up(cx);
-                                }),
-                            ),
-                    )
-                },
-            )
+            .when(self.is_interacting(), |this| {
+                this.child(deferred(
+                    div()
+                        .id("pdf-global-drag-overlay")
+                        .absolute()
+                        .inset_0()
+                        .occlude()
+                        .cursor_default()
+                        .on_mouse_move(cx.listener(|this, event, window, cx| {
+                            this.handle_global_mouse_move(event, window, cx);
+                        }))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                                this.handle_global_mouse_up(event, window, cx);
+                                cx.notify();
+                            }),
+                        ),
+                ))
+            })
             .into_any_element()
     }
 }
