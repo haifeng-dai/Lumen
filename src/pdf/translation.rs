@@ -153,7 +153,18 @@ impl super::PdfReaderView {
             .as_ref()
             .and_then(|d| d.get_active_chat_backend());
 
-        if let Some(select) = &self.chat_backend_select {
+        let new_backends = self
+            .delegate
+            .as_ref()
+            .map(|d| d.list_ai_backends())
+            .unwrap_or_default();
+
+        let need_recreate = match &self.chat_backend_select {
+            None => true,
+            Some(_) => self.cached_ai_backends != new_backends,
+        };
+
+        if !need_recreate && let Some(select) = &self.chat_backend_select {
             select.update(cx, |state, cx| {
                 if state.selected_value() != current_name.as_ref()
                     && let Some(ref name) = current_name
@@ -164,16 +175,9 @@ impl super::PdfReaderView {
             return select.clone();
         }
 
-        let items: Vec<AiBackendSelectItem> = self
-            .delegate
-            .as_ref()
-            .map(|d| {
-                d.list_ai_backends()
-                    .into_iter()
-                    .map(AiBackendSelectItem)
-                    .collect()
-            })
-            .unwrap_or_default();
+        self.cached_ai_backends = new_backends.clone();
+        let items: Vec<AiBackendSelectItem> =
+            new_backends.into_iter().map(AiBackendSelectItem).collect();
 
         let select = cx.new(|cx| {
             let mut state = gpui_component::select::SelectState::new(items, None, window, cx);

@@ -119,6 +119,7 @@ impl SettingsWindow {
                                             .translation_keys
                                             .insert("chat.active".into(), v.to_string());
                                         let _ = app_clone.local_state_manager.save_all(&state);
+                                        app_clone.notify_ui_changed();
                                     },
                                 ))
                         }

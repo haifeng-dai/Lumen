@@ -248,6 +248,7 @@ impl super::PdfReaderView {
             chat_create_prompt: None,
             chat_session_view: None,
             chat_backend_select: None,
+            cached_ai_backends: Vec::new(),
 
             pins: Vec::new(),
             active_pin_id: None,
@@ -324,6 +325,14 @@ impl super::PdfReaderView {
             if changed {
                 cx.notify();
             }
+        })
+        .detach();
+
+        _cx.observe_global::<crate::app_state::config::ConfigStore>(|this, cx| {
+            this.chat_backend_select = None;
+            this.cached_ai_backends.clear();
+            this.engine_select = None;
+            cx.notify();
         })
         .detach();
 

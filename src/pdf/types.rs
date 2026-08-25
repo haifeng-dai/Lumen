@@ -229,7 +229,7 @@ impl gpui::Global for GlobalPdfUiState {}
 
 /// 包装引擎的 [services::pdf::AiBackendItem]，为 gpui-component 下拉实现 [gpui_component::select::SelectItem]。
 /// 由于 `AiBackendItem` 定义在 `services::pdf` 模块，无法在二进制侧直接为其 impl 外部 trait（orphan rule），故使用 newtype。
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AiBackendSelectItem(pub services::pdf::AiBackendItem);
 
 impl gpui_component::select::SelectItem for AiBackendSelectItem {

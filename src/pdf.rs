@@ -171,6 +171,7 @@ pub struct PdfReaderView {
         Option<gpui::Entity<components::chat_session_view::ChatSessionView>>,
     pub(crate) chat_backend_select:
         Option<gpui::Entity<gpui_component::select::SelectState<Vec<AiBackendSelectItem>>>>,
+    pub(crate) cached_ai_backends: Vec<services::pdf::AiBackendItem>,
 
     // ─── 页面可见性管理 ─────────────────────────────────
     pub(crate) visible_page_first: usize,
