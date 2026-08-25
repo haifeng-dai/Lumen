@@ -338,6 +338,12 @@ impl Render for PdfReaderView {
                     this.handle_global_mouse_up(event, window, cx);
                 }),
             )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.handle_global_mouse_up(event, window, cx);
+                }),
+            )
             .child(
                 h_flex()
                     .flex_grow(1.0)
