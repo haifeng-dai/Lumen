@@ -329,6 +329,7 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::PageRange => "第 {}-{} 页",
         I18nKey::SinglePage => "第 {} 页",
         I18nKey::SelectTextToTranslate => "选中文本开始翻译",
+        I18nKey::Translate => "翻译",
         I18nKey::OriginalSection => "原文",
         I18nKey::TranslationSection => "译文",
         I18nKey::Translating => "正在翻译...",

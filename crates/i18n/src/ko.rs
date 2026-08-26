@@ -326,6 +326,7 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::PageRange => "{}-{} 페이지",
         I18nKey::SinglePage => "{} 페이지",
         I18nKey::SelectTextToTranslate => "텍스트를 선택하여 번역",
+        I18nKey::Translate => "번역",
         I18nKey::OriginalSection => "원문",
         I18nKey::TranslationSection => "번역",
         I18nKey::Translating => "번역 중...",

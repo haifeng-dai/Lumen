@@ -338,6 +338,7 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::PageRange => "Page {}-{}",
         I18nKey::SinglePage => "Page {}",
         I18nKey::SelectTextToTranslate => "Select text to translate",
+        I18nKey::Translate => "Translate",
         I18nKey::OriginalSection => "Original",
         I18nKey::TranslationSection => "Translation",
         I18nKey::Translating => "Translating...",

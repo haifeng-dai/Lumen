@@ -450,6 +450,7 @@ pub enum I18nKey {
     PageRange,
     SinglePage,
     SelectTextToTranslate,
+    Translate,
     OriginalSection,
     TranslationSection,
     Translating,

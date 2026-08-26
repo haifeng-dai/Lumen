@@ -522,7 +522,7 @@ impl PdfReaderView {
         let text_bottom_y = page_y + max_y;
 
         const TOOLBAR_W: f32 = 200.0;
-        const TOOLBAR_H: f32 = 80.0;
+        const TOOLBAR_H: f32 = 120.0;
 
         let viewport_w = f32::from(window.viewport_size().width);
         let viewport_h = f32::from(window.viewport_size().height) - self.tab_bar_offset_px;
@@ -1018,6 +1018,35 @@ fn annotation_picker_items(
             }
         }
         items.push(PopupMenuItem::Separator);
+
+        let weak_translate = weak_self.clone();
+        items.push(
+            PopupMenuItem::element(move |_window, cx| {
+                let accent_bg = cx.theme().tokens.accent;
+                let accent_fg = cx.theme().tokens.accent_foreground;
+                h_flex()
+                    .w_full()
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .justify_center()
+                    .items_center()
+                    .hover(move |s| s.bg(accent_bg).text_color(accent_fg))
+                    .child(div().child(i18n::t(I18nKey::Translate, Default::default())))
+            })
+            .on_click(move |_, _window, cx| {
+                if let Some(this) = weak_translate.upgrade() {
+                    this.update(cx, |this, cx| {
+                        let Some(text) = this.selected_text.clone() else {
+                            return;
+                        };
+
+                        this.translate_text(text, true, cx);
+                    });
+                }
+            }),
+        );
     }
 
     items
