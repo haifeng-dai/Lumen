@@ -800,6 +800,10 @@ impl PdfReaderView {
             } else if let (Some((sp, si)), Some((ep, ei))) =
                 (self.selection_start, self.selection_end)
             {
+                // 文本内容只在选区最终确定后生成。拖动过程中只更新选区端点，
+                // 避免每个鼠标移动事件都遍历整个选区并重建 String。
+                self.update_selection(cx);
+
                 self.annotation_context_menu = None;
                 self.pin_context_menu = None;
                 self.close_thumbnail_context_menu(cx);
@@ -1039,7 +1043,8 @@ impl PdfReaderView {
         self.is_selecting = true;
         self.selection_start = Some((page_index, char_index));
         self.selection_end = Some((page_index, char_index));
-        self.update_selection(cx);
+        self.selected_text = None;
+        cx.notify();
     }
 
     pub(crate) fn update_selection_end(
@@ -1049,8 +1054,11 @@ impl PdfReaderView {
         cx: &mut Context<Self>,
     ) {
         if self.is_selecting {
-            self.selection_end = Some((page_index, char_index));
-            self.update_selection(cx);
+            let endpoint = Some((page_index, char_index));
+            if self.selection_end != endpoint {
+                self.selection_end = endpoint;
+                cx.notify();
+            }
         }
     }
 
