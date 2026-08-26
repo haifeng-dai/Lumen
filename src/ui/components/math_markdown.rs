@@ -446,23 +446,25 @@ fn render_inline_flow(
         .flex()
         .flex_wrap()
         .items_center()
-        .gap_x_1()
+        .gap_x_0()
         .gap_y_1();
 
     for (ix, segment) in parts {
         match segment {
             MarkdownSegment::Text(text) => {
-                let mut view = TextView::markdown(
-                    SharedString::from(format!("{base_id}-text-{ix}")),
-                    SharedString::from(text),
-                )
-                .selectable(true)
-                .text_size(font_size)
-                .text_color(text_color);
-                if let Some(style) = heading_style {
-                    view = view.style(style.clone());
+                for (part_ix, part) in split_inline_text(&text).into_iter().enumerate() {
+                    let mut view = TextView::markdown(
+                        SharedString::from(format!("{base_id}-text-{ix}-{part_ix}")),
+                        SharedString::from(part),
+                    )
+                    .selectable(true)
+                    .text_size(font_size)
+                    .text_color(text_color);
+                    if let Some(style) = heading_style {
+                        view = view.style(style.clone());
+                    }
+                    flow = flow.child(view);
                 }
-                flow = flow.child(view);
             }
             MarkdownSegment::Math {
                 latex,
@@ -482,6 +484,44 @@ fn render_inline_flow(
     }
 
     flow
+}
+
+fn split_inline_text(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+
+    let flush = |parts: &mut Vec<String>, current: &mut String| {
+        if !current.is_empty() {
+            parts.push(std::mem::take(current));
+        }
+    };
+
+    for ch in text.chars() {
+        if ch == '\n' || ch == '\r' {
+            flush(&mut parts, &mut current);
+            parts.push(ch.to_string());
+        } else if ch.is_whitespace() {
+            current.push(ch);
+        } else if is_cjk_character(ch) || ch.is_ascii_punctuation() {
+            flush(&mut parts, &mut current);
+            parts.push(ch.to_string());
+        } else {
+            current.push(ch);
+        }
+    }
+    flush(&mut parts, &mut current);
+    parts
+}
+
+fn is_cjk_character(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{2E80}'..='\u{2FFF}'
+            | '\u{3000}'..='\u{303F}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{F900}'..='\u{FAFF}'
+    )
 }
 
 /// 渲染包含纯原生 LaTeX 矢量公式的 Markdown 视图（支持公式段优先切分与原生矢量排版）
