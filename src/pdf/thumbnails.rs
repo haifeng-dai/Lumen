@@ -1,6 +1,12 @@
 use gpui::Context;
 
 impl super::PdfReaderView {
+    pub(crate) fn close_thumbnail_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.thumbnail_context_menu.take().is_some() {
+            self.clear_thumbnail_selection(cx);
+        }
+    }
+
     pub(crate) fn clear_thumbnail_selection(&mut self, cx: &mut Context<Self>) {
         if self.selected_thumbnails.is_empty() && self.last_anchor_page.is_none() {
             return;

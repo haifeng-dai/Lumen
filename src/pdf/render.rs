@@ -331,7 +331,7 @@ impl Render for PdfReaderView {
                         || this.last_anchor_page.is_some()
                         || this.thumbnail_context_menu.is_some())
                 {
-                    this.thumbnail_context_menu = None;
+                    this.close_thumbnail_context_menu(cx);
                     this.clear_thumbnail_selection(cx);
                 } else if event.keystroke.key.as_str() == "c"
                     && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
@@ -379,7 +379,7 @@ impl Render for PdfReaderView {
                                     .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                                         this.annotation_context_menu = None;
                                         this.pin_context_menu = None;
-                                        this.thumbnail_context_menu = None;
+                                        this.close_thumbnail_context_menu(cx);
                                         this.annotation_toolbar_menu = None;
                                         this.annotation_state.toolbar = None;
                                         this.selection_start = None;

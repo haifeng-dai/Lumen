@@ -39,7 +39,7 @@ impl PdfReaderView {
             .h_full()
             .bg(theme.sidebar)
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
-                this.thumbnail_context_menu = None;
+                this.close_thumbnail_context_menu(cx);
                 this.annotation_context_menu = None;
                 cx.notify();
             }))
@@ -457,7 +457,7 @@ impl PdfReaderView {
                     .on_click(move |_, _window, cx| {
                         if let Some(this) = weak_a.upgrade() {
                             this.update(cx, |this, cx| {
-                                this.thumbnail_context_menu = None;
+                                this.close_thumbnail_context_menu(cx);
                                 this.delete_pages(&pages_for_del, cx);
                             });
                         }
@@ -476,7 +476,7 @@ impl PdfReaderView {
                     .on_click(move |_, _window, cx| {
                         if let Some(this) = weak_b.upgrade() {
                             this.update(cx, |this, cx| {
-                                this.thumbnail_context_menu = None;
+                                this.close_thumbnail_context_menu(cx);
                                 this.export_pages(&pages_for_save, cx);
                             });
                         }
@@ -496,7 +496,7 @@ impl PdfReaderView {
                     .on_click(move |_, _window, cx| {
                         if let Some(this) = weak_c.upgrade() {
                             this.update(cx, |this, cx| {
-                                this.thumbnail_context_menu = None;
+                                this.close_thumbnail_context_menu(cx);
                                 this.delete_pages(&[pi_del], cx);
                             });
                         }
@@ -514,7 +514,7 @@ impl PdfReaderView {
                     .on_click(move |_, _window, cx| {
                         if let Some(this) = weak_d.upgrade() {
                             this.update(cx, |this, cx| {
-                                this.thumbnail_context_menu = None;
+                                this.close_thumbnail_context_menu(cx);
                                 this.export_pages(&[pi_save], cx);
                             });
                         }

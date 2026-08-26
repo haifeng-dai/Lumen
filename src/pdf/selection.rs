@@ -614,7 +614,7 @@ impl PdfReaderView {
             self.annotation_toolbar_menu = None;
             self.annotation_context_menu = None;
             self.pin_context_menu = None;
-            self.thumbnail_context_menu = None;
+            self.close_thumbnail_context_menu(cx);
             self.annotation_state.note_editor = None;
             self.note_input_state = None;
             self.note_input_sub = None;
@@ -802,7 +802,7 @@ impl PdfReaderView {
             {
                 self.annotation_context_menu = None;
                 self.pin_context_menu = None;
-                self.thumbnail_context_menu = None;
+                self.close_thumbnail_context_menu(cx);
                 self.annotation_state.note_editor = None;
                 self.note_input_state = None;
                 self.note_input_sub = None;
