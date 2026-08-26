@@ -1,7 +1,5 @@
 use self::text_format::clean_translation_text;
-use gpui::prelude::*;
-use gpui::{AsyncApp, Context, WeakEntity, Window};
-use gpui_component::select::SelectEvent;
+use gpui::{AsyncApp, Context, WeakEntity};
 use services::pdf::PdfReaderDelegate;
 
 use i18n::{I18nKey, Language};
@@ -71,37 +69,19 @@ impl super::PdfReaderView {
     pub fn set_language(&mut self, language: Language, cx: &mut Context<Self>) {
         self.language = language;
         // 如果 SelectState 已存在，需要重新生成或更新其选项的语言（为了简单，我们清空它，下次获取时会重新用新语言创建）
-        self.engine_select = None;
         cx.notify();
     }
 
-    pub(crate) fn get_or_create_engine_select(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> gpui::Entity<gpui_component::select::SelectState<Vec<TranslationEngineItem>>> {
-        let current_engine = self
-            .delegate
-            .as_ref()
-            .map(|d| d.current_translation_engine_id())
-            .unwrap_or_default();
-
-        if let Some(select) = &self.engine_select {
-            select.update(cx, |state, cx| {
-                if state.selected_value() != Some(&current_engine) {
-                    state.set_selected_value(&current_engine, window, cx);
-                }
-            });
-            return select.clone();
-        }
-
+    pub(crate) fn translation_engine_options(
+        &self,
+    ) -> Vec<(gpui::SharedString, gpui::SharedString)> {
         let engines = self
             .delegate
             .as_ref()
             .map(|d| d.get_translation_engines())
             .unwrap_or_default();
 
-        let engine_items: Vec<TranslationEngineItem> = engines
+        engines
             .into_iter()
             .map(|id| {
                 let label = match id.as_str() {
@@ -116,88 +96,21 @@ impl super::PdfReaderView {
                     "ai" => i18n::t(I18nKey::EngineAi, self.language).to_string(),
                     _ => id.clone(),
                 };
-                TranslationEngineItem { value: id, label }
+                (id.into(), label.into())
             })
-            .collect();
-
-        let select = cx.new(|cx| {
-            let mut state =
-                gpui_component::select::SelectState::new(engine_items, None, window, cx);
-            state.set_selected_value(&current_engine, window, cx);
-            state
-        });
-
-        cx.subscribe(&select, |this, _, event, cx| {
-            if let SelectEvent::Confirm(Some(engine_id)) = event
-                && let Some(delegate) = &this.delegate
-            {
-                delegate.set_translation_engine(engine_id.clone());
-                cx.update_global::<crate::app_state::config::ConfigStore, _>(|store, _cx| {
-                    store.inner.translation.engine = engine_id.clone();
-                });
-            }
-        })
-        .detach();
-
-        self.engine_select = Some(select.clone());
-        select
+            .collect()
     }
 
-    pub(crate) fn get_or_create_chat_backend_select(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> gpui::Entity<gpui_component::select::SelectState<Vec<AiBackendSelectItem>>> {
-        let current_name = self
-            .delegate
+    pub(crate) fn chat_backend_options(&self) -> Vec<(gpui::SharedString, gpui::SharedString)> {
+        self.delegate
             .as_ref()
-            .and_then(|d| d.get_active_chat_backend());
-
-        let new_backends = self
-            .delegate
-            .as_ref()
-            .map(|d| d.list_ai_backends())
-            .unwrap_or_default();
-
-        let need_recreate = match &self.chat_backend_select {
-            None => true,
-            Some(_) => self.cached_ai_backends != new_backends,
-        };
-
-        if !need_recreate && let Some(select) = &self.chat_backend_select {
-            select.update(cx, |state, cx| {
-                if state.selected_value() != current_name.as_ref()
-                    && let Some(ref name) = current_name
-                {
-                    state.set_selected_value(name, window, cx);
-                }
-            });
-            return select.clone();
-        }
-
-        self.cached_ai_backends = new_backends.clone();
-        let items: Vec<AiBackendSelectItem> =
-            new_backends.into_iter().map(AiBackendSelectItem).collect();
-
-        let select = cx.new(|cx| {
-            let mut state = gpui_component::select::SelectState::new(items, None, window, cx);
-            if let Some(ref name) = current_name {
-                state.set_selected_value(name, window, cx);
-            }
-            state
-        });
-
-        cx.subscribe(&select, |this, _, event, _cx| {
-            if let SelectEvent::Confirm(Some(name)) = event
-                && let Some(delegate) = &this.delegate
-            {
-                delegate.set_active_chat_backend(name.to_string());
-            }
-        })
-        .detach();
-
-        self.chat_backend_select = Some(select.clone());
-        select
+            .map(|d| {
+                d.list_ai_backends()
+                    .into_iter()
+                    .map(|item| (item.name.clone().into(), item.name.into()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn delegate(&self) -> Option<&Arc<dyn PdfReaderDelegate>> {

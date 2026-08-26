@@ -1,7 +1,7 @@
 use crate::pdf::PdfReaderView;
 use crate::pdf::components::edit_chat_dialog::EditChatSessionDialog;
 use crate::pdf::components::streaming_bubble::{CHAT_BODY_FONT_SIZE, StreamingBubbleView};
-use components::IconName;
+use components::{IconName, selector_fill};
 use gpui::prelude::*;
 use gpui::{
     Bounds, Context, FontWeight, Point, TitlebarOptions, WeakEntity, Window, WindowBounds,
@@ -1066,10 +1066,14 @@ impl gpui::Render for ChatSessionView {
         let theme = cx.theme().clone();
         let muted = theme.muted_foreground;
 
-        let backend_select = self.parent_handle.upgrade().map(|p| {
-            p.update(cx, |parent, cx| {
-                parent.get_or_create_chat_backend_select(window, cx)
-            })
+        let backend_options = self.parent_handle.upgrade().map(|parent| {
+            let options = parent.read(cx).chat_backend_options();
+            let current = parent
+                .read(cx)
+                .delegate()
+                .and_then(|delegate| delegate.get_active_chat_backend())
+                .unwrap_or_default();
+            (options, current, parent)
         });
 
         self.cached_attachments = self
@@ -1525,12 +1529,21 @@ impl gpui::Render for ChatSessionView {
                                 .items_center()
                                 .gap_1()
                                 .mb_1()
-                                .when_some(backend_select, |this, sel| {
-                                    this.child(
-                                        div()
-                                            .flex_1()
-                                            .child(gpui_component::select::Select::new(&sel)),
-                                    )
+                                .when_some(backend_options, |this, (options, current, parent)| {
+                                    this.child(selector_fill(
+                                        "chat-backend-select",
+                                        options,
+                                        current.into(),
+                                        false,
+                                        move |value, _, app_cx| {
+                                            parent.update(app_cx, |parent, _| {
+                                                if let Some(delegate) = &parent.delegate {
+                                                    delegate
+                                                        .set_active_chat_backend(value.to_string());
+                                                }
+                                            });
+                                        },
+                                    ))
                                 })
                                 .child(
                                     Button::new("chat-attach")

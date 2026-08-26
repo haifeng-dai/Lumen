@@ -175,7 +175,6 @@ impl super::PdfReaderView {
             is_right_sidebar_open: use_is_right_sidebar_open,
             active_right_sidebar_tab: RightSidebarTab::Translation,
             translation_result: None,
-            engine_select: None,
             translation_original_expanded: initial_state.translation_original_expanded,
             translation_font_size: initial_state.translation_font_size,
             auto_translate: use_auto_translate,
@@ -247,8 +246,6 @@ impl super::PdfReaderView {
             chat_create_title: None,
             chat_create_prompt: None,
             chat_session_view: None,
-            chat_backend_select: None,
-            cached_ai_backends: Vec::new(),
 
             pins: Vec::new(),
             active_pin_id: None,
@@ -328,10 +325,7 @@ impl super::PdfReaderView {
         })
         .detach();
 
-        _cx.observe_global::<crate::app_state::config::ConfigStore>(|this, cx| {
-            this.chat_backend_select = None;
-            this.cached_ai_backends.clear();
-            this.engine_select = None;
+        _cx.observe_global::<crate::app_state::config::ConfigStore>(|_, cx| {
             cx.notify();
         })
         .detach();

@@ -1,12 +1,11 @@
 use crate::pdf::PdfReaderView;
 use crate::pdf::components::chat_session_view::ChatSessionView;
 use crate::pdf::types::{RightSidebarTab, TOOLBAR_HEIGHT_REMS};
-use components::IconName;
+use components::{IconName, selector_fixed};
 use gpui::prelude::*;
 use gpui::{ClipboardItem, Context, WeakEntity, Window, div, px, rems};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::select::Select;
 use gpui_component::{ActiveTheme, Icon, Selectable, h_flex, label::Label, v_flex};
 use i18n::I18nKey;
 use log::debug;
@@ -100,11 +99,11 @@ impl PdfReaderView {
 
     fn render_translation_content(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let select_state = self.get_or_create_engine_select(window, cx);
         let theme = cx.theme();
+        let this_weak = cx.entity().downgrade();
         let theme_foreground = theme.foreground;
         let theme_muted_foreground = theme.muted_foreground;
         let result = &self.translation_result;
@@ -186,7 +185,34 @@ impl PdfReaderView {
                                 h_flex()
                                     .gap_2()
                                     .items_center()
-                                    .child(div().w(px(140.0)).child(Select::new(&select_state)))
+                                    .child(selector_fixed(
+                                        "translation-engine-select",
+                                        self.translation_engine_options(),
+                                        self.delegate
+                                            .as_ref()
+                                            .map(|d| d.current_translation_engine_id())
+                                            .unwrap_or_default()
+                                            .into(),
+                                        false,
+                                        px(140.0),
+                                        {
+                                            let this_weak = this_weak.clone();
+                                            move |value, _, cx| {
+                                                let engine_id = value.to_string();
+                                                let _ = this_weak.update(cx, |this, cx| {
+                                                    if let Some(delegate) = &this.delegate {
+                                                        delegate.set_translation_engine(engine_id.clone());
+                                                    }
+                                                    cx.update_global::<
+                                                        crate::app_state::config::ConfigStore,
+                                                        _,
+                                                    >(|store, _| {
+                                                        store.inner.translation.engine = engine_id;
+                                                    });
+                                                });
+                                            }
+                                        }
+                                    ))
                                     .when(!original_for_copy.is_empty(), |this| {
                                         this.child(
                                             Button::new("append-translation-toggle")

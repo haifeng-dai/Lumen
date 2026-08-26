@@ -97,8 +97,6 @@ pub struct PdfReaderView {
     pub(crate) is_right_sidebar_open: bool,
     pub(crate) active_right_sidebar_tab: RightSidebarTab,
     pub(crate) translation_result: Option<TranslationResult>,
-    pub(crate) engine_select:
-        Option<gpui::Entity<gpui_component::select::SelectState<Vec<TranslationEngineItem>>>>,
     pub(crate) translation_original_expanded: bool,
     pub(crate) translation_font_size: f32,
     pub(crate) auto_translate: bool,
@@ -169,9 +167,6 @@ pub struct PdfReaderView {
     pub(crate) chat_create_prompt: Option<gpui::Entity<gpui_component::input::TextareaState>>,
     pub(crate) chat_session_view:
         Option<gpui::Entity<components::chat_session_view::ChatSessionView>>,
-    pub(crate) chat_backend_select:
-        Option<gpui::Entity<gpui_component::select::SelectState<Vec<AiBackendSelectItem>>>>,
-    pub(crate) cached_ai_backends: Vec<services::pdf::AiBackendItem>,
 
     // ─── 页面可见性管理 ─────────────────────────────────
     pub(crate) visible_page_first: usize,

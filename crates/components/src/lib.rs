@@ -14,4 +14,4 @@ pub use input::{
     labeled_input, muted_input, muted_input_raw, muted_textarea, muted_textarea_raw, password_input,
 };
 pub use resize_handle::{Side, render_resize_handle};
-pub use selector::selector;
+pub use selector::{selector, selector_fill, selector_fixed};
