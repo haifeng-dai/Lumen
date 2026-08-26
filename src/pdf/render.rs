@@ -147,6 +147,11 @@ impl Render for PdfReaderView {
                 self.current_offset_y = new_offset_y;
                 self.request_state_save(cx);
 
+                // 用户滚动切换到另一页后，旧页面选择不再对应当前阅读位置。
+                if page_changed {
+                    self.clear_thumbnail_selection(cx);
+                }
+
                 if page_changed && self.is_left_sidebar_open {
                     let thumbnail_scroll = self.thumbnail_list_state.logical_scroll_top();
                     // 如果当前页面已经对齐在顶部（容差 1px），则不触发强制对齐，防止拉动侧边栏时产生跳变
@@ -321,7 +326,14 @@ impl Render for PdfReaderView {
                 },
             ))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
-                if event.keystroke.key.as_str() == "c"
+                if event.keystroke.key.as_str() == "escape"
+                    && (!this.selected_thumbnails.is_empty()
+                        || this.last_anchor_page.is_some()
+                        || this.thumbnail_context_menu.is_some())
+                {
+                    this.thumbnail_context_menu = None;
+                    this.clear_thumbnail_selection(cx);
+                } else if event.keystroke.key.as_str() == "c"
                     && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
                 {
                     if let Some(ref text) = this.selected_text

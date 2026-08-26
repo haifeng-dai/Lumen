@@ -168,6 +168,12 @@ impl PdfReaderView {
 
         let list = div()
             .relative()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.clear_thumbnail_selection(cx);
+                }),
+            )
             .child(
                 gpui::list(self.thumbnail_list_state.clone(), move |index, _, cx| {
                     view_weak
@@ -181,55 +187,7 @@ impl PdfReaderView {
             )
             .child(self.render_thumbnail_scrollbar(window, cx));
 
-        if !self.selected_thumbnails.is_empty() {
-            let count = self.selected_thumbnails.len();
-            let theme = cx.theme();
-            v_flex()
-                .size_full()
-                .child(
-                    h_flex()
-                        .px_2()
-                        .py_1()
-                        .gap_2()
-                        .items_center()
-                        .border_b_1()
-                        .border_color(theme.border.opacity(0.6))
-                        .child(
-                            Label::new(format!("已选 {} 页", count))
-                                .text_xs()
-                                .text_color(theme.muted_foreground),
-                        )
-                        .child(
-                            Button::new("thumb-sel-delete")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.delete_selected_thumbnails(cx);
-                                }))
-                                .child(
-                                    Label::new(i18n::t(I18nKey::DeletePage, self.language))
-                                        .text_xs(),
-                                ),
-                        )
-                        .child(
-                            Button::new("thumb-sel-save")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.save_selected_thumbnails(cx);
-                                }))
-                                .child(Label::new(i18n::t(I18nKey::Save, self.language)).text_xs()),
-                        )
-                        .child(
-                            Button::new("thumb-sel-clear")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.clear_thumbnail_selection(cx);
-                                }))
-                                .child(
-                                    Label::new(i18n::t(I18nKey::Cancel, self.language)).text_xs(),
-                                ),
-                        ),
-                )
-                .child(list.flex_1().min_h_0())
-        } else {
-            list.size_full()
-        }
+        list.size_full()
     }
 
     pub(crate) fn render_thumbnail_scrollbar(
@@ -635,6 +593,7 @@ impl PdfReaderView {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
                                     let cmd = event.modifiers.platform;
                                     let shift = event.modifiers.shift;
                                     if cmd {
@@ -642,7 +601,7 @@ impl PdfReaderView {
                                     } else if shift {
                                         this.range_select_thumbnails(page_index, cx);
                                     } else {
-                                        this.select_thumbnail(page_index, cx);
+                                        this.clear_thumbnail_selection(cx);
                                         this.scroll_to_page(page_index, px(0.0), cx);
                                     }
                                 }),
@@ -650,6 +609,10 @@ impl PdfReaderView {
                             .on_mouse_down(
                                 MouseButton::Right,
                                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    if !this.selected_thumbnails.contains(&page_index) {
+                                        this.select_thumbnail(page_index, cx);
+                                    }
                                     let menu =
                                         this.build_thumbnail_context_menu(page_index, window, cx);
                                     let local_pos = gpui::point(

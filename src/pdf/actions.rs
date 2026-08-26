@@ -92,6 +92,9 @@ impl PdfReaderView {
             return;
         }
 
+        if self.current_page != page_index {
+            self.clear_thumbnail_selection(cx);
+        }
         self.current_page = page_index;
         self.programmatic_scroll = true;
         // 同步主视图位置
@@ -239,6 +242,9 @@ impl PdfReaderView {
             }
         }
 
+        if self.current_page != target_page_ix as u16 {
+            self.clear_thumbnail_selection(cx);
+        }
         self.current_page = target_page_ix as u16;
         self.list_state.scroll_to(ListOffset {
             item_ix: target_page_ix,

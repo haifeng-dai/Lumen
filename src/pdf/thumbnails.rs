@@ -1,6 +1,15 @@
 use gpui::Context;
 
 impl super::PdfReaderView {
+    pub(crate) fn clear_thumbnail_selection(&mut self, cx: &mut Context<Self>) {
+        if self.selected_thumbnails.is_empty() && self.last_anchor_page.is_none() {
+            return;
+        }
+        self.selected_thumbnails.clear();
+        self.last_anchor_page = None;
+        cx.notify();
+    }
+
     pub(crate) fn select_thumbnail(&mut self, page: u16, cx: &mut Context<Self>) {
         self.selected_thumbnails.clear();
         self.selected_thumbnails.insert(page);
@@ -42,15 +51,6 @@ impl super::PdfReaderView {
         cx.notify();
     }
 
-    pub(crate) fn clear_thumbnail_selection(&mut self, cx: &mut Context<Self>) {
-        if self.selected_thumbnails.is_empty() {
-            return;
-        }
-        self.selected_thumbnails.clear();
-        self.last_anchor_page = None;
-        cx.notify();
-    }
-
     /// 删除给定页（降序发送，避免索引前移错位），并清空选中集。
     pub(crate) fn delete_pages(&mut self, pages: &[u16], cx: &mut Context<Self>) {
         if pages.is_empty() {
@@ -84,29 +84,15 @@ impl super::PdfReaderView {
 
         let service = self.pdf_service.clone();
         let pages_for_task = sorted.clone();
-        cx.background_executor()
-            .spawn(async move {
-                if let Ok(Ok(Some(dest_path))) = receiver.await {
-                    service.send_extract_pages(pages_for_task, dest_path);
-                }
-            })
-            .detach();
-
-        self.selected_thumbnails.clear();
-        self.last_anchor_page = None;
-        cx.notify();
-    }
-
-    /// 批量删除当前选中页。
-    pub(crate) fn delete_selected_thumbnails(&mut self, cx: &mut Context<Self>) {
-        let pages: Vec<u16> = self.selected_thumbnails.iter().copied().collect();
-        self.delete_pages(&pages, cx);
-    }
-
-    /// 保存(导出)当前选中页为新 PDF。
-    pub(crate) fn save_selected_thumbnails(&mut self, cx: &mut Context<Self>) {
-        let pages: Vec<u16> = self.selected_thumbnails.iter().copied().collect();
-        self.export_pages(&pages, cx);
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(Some(dest_path))) = receiver.await {
+                service.send_extract_pages(pages_for_task, dest_path);
+                let _ = this.update(cx, |this, cx| {
+                    this.clear_thumbnail_selection(cx);
+                });
+            }
+        })
+        .detach();
     }
 
     /// 根据选中页生成建议文件名，如 `<原名>_pages_1-3.pdf`（单页 `<原名>_p2.pdf`）。
