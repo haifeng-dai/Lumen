@@ -12,519 +12,184 @@ enum MarkdownSegment {
     Math { latex: String, is_display: bool },
 }
 
-/// 将 ASCII 字母转换为 Unicode 数学斜体字符 (Mathematical Italic, U+1D434 / U+1D44E)
-fn to_math_italic_char(c: char) -> char {
-    match c {
-        'a'..='z' => {
-            if c == 'h' {
-                'ℎ' // U+210E PLANCK CONSTANT
-            } else {
-                char::from_u32(0x1D44E + (c as u32 - 'a' as u32)).unwrap_or(c)
-            }
+#[derive(Debug, Clone, PartialEq)]
+enum MathNode {
+    Sequence(Vec<MathNode>),
+    Text(String),
+    Command {
+        name: String,
+        args: Vec<MathNode>,
+    },
+    Subscript {
+        base: Box<MathNode>,
+        script: Box<MathNode>,
+    },
+    Superscript {
+        base: Box<MathNode>,
+        script: Box<MathNode>,
+    },
+}
+
+struct MathParser {
+    chars: Vec<char>,
+    position: usize,
+}
+
+impl MathParser {
+    fn new(source: &str) -> Self {
+        Self {
+            chars: source.chars().collect(),
+            position: 0,
         }
-        'A'..='Z' => char::from_u32(0x1D434 + (c as u32 - 'A' as u32)).unwrap_or(c),
-        _ => c,
     }
-}
 
-/// 将 ASCII 字符转换为 Unicode 数学下标字符
-fn to_subscript_char(c: char) -> Option<char> {
-    match c {
-        '0'..='9' => char::from_u32(0x2080 + (c as u32 - '0' as u32)),
-        'a' => Some('ₐ'),
-        'e' => Some('ₑ'),
-        'h' => Some('ₕ'),
-        'i' => Some('ᵢ'),
-        'j' => Some('ⱼ'),
-        'k' => Some('ₖ'),
-        'l' => Some('ₗ'),
-        'm' => Some('ₘ'),
-        'n' => Some('ₙ'),
-        'o' => Some('ₒ'),
-        'p' => Some('ₚ'),
-        'r' => Some('ᵣ'),
-        's' => Some('ₛ'),
-        't' => Some('ₜ'),
-        'u' => Some('ᵤ'),
-        'v' => Some('ᵥ'),
-        'x' => Some('ₓ'),
-        '+' => Some('₊'),
-        '-' => Some('₋'),
-        '=' => Some('₌'),
-        '(' => Some('₍'),
-        ')' => Some('₎'),
-        _ => None,
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.position).copied()
     }
-}
 
-/// 将 ASCII 字符转换为 Unicode 数学上标字符
-fn to_superscript_char(c: char) -> Option<char> {
-    match c {
-        '0' => Some('⁰'),
-        '1' => Some('¹'),
-        '2' => Some('²'),
-        '3' => Some('³'),
-        '4'..='9' => char::from_u32(0x2070 + (c as u32 - '0' as u32)),
-        'a' => Some('ᵃ'),
-        'b' => Some('ᵇ'),
-        'c' => Some('ᶜ'),
-        'd' => Some('ᵈ'),
-        'e' => Some('ᵉ'),
-        'f' => Some('ᶠ'),
-        'g' => Some('ᵍ'),
-        'h' => Some('ʰ'),
-        'i' => Some('ⁱ'),
-        'j' => Some('ʲ'),
-        'k' => Some('ᵏ'),
-        'l' => Some('ˡ'),
-        'm' => Some('ᵐ'),
-        'n' => Some('ⁿ'),
-        'o' => Some('ᵒ'),
-        'p' => Some('ᵖ'),
-        'r' => Some('ʳ'),
-        's' => Some('ˢ'),
-        't' => Some('ᵗ'),
-        'u' => Some('ᵘ'),
-        'v' => Some('ᵛ'),
-        'w' => Some('ʷ'),
-        'x' => Some('ˣ'),
-        'y' => Some('ʸ'),
-        'z' => Some('ᶻ'),
-        '+' => Some('⁺'),
-        '-' => Some('⁻'),
-        '=' => Some('⁼'),
-        '(' => Some('⁽'),
-        ')' => Some('⁾'),
-        _ => None,
+    fn next(&mut self) -> Option<char> {
+        let ch = self.peek()?;
+        self.position += 1;
+        Some(ch)
     }
-}
 
-/// 将常用希腊字母命令转换为 Unicode 数学斜体希腊字母 (Mathematical Italic Greek, U+1D6FC ~ U+1D714)
-fn to_math_italic_greek(cmd: &str) -> Option<&'static str> {
-    match cmd {
-        "alpha" => Some("𝛼"),
-        "beta" => Some("𝛽"),
-        "gamma" => Some("𝛾"),
-        "delta" => Some("𝛿"),
-        "epsilon" | "varepsilon" => Some("𝜀"),
-        "zeta" => Some("𝜁"),
-        "eta" => Some("𝜂"),
-        "theta" | "vartheta" => Some("𝜃"),
-        "iota" => Some("𝜄"),
-        "kappa" => Some("𝜅"),
-        "lambda" => Some("𝜆"),
-        "mu" => Some("𝜇"),
-        "nu" => Some("𝜈"),
-        "xi" => Some("𝜉"),
-        "pi" | "varpi" => Some("𝜋"),
-        "rho" | "varrho" => Some("𝜌"),
-        "sigma" | "varsigma" => Some("𝜎"),
-        "tau" => Some("𝜏"),
-        "upsilon" => Some("𝜐"),
-        "phi" | "varphi" => Some("𝜑"),
-        "chi" => Some("𝜒"),
-        "psi" => Some("𝜓"),
-        "omega" => Some("𝜔"),
-        _ => None,
+    fn skip_whitespace(&mut self) {
+        while self.peek().is_some_and(char::is_whitespace) {
+            self.position += 1;
+        }
     }
-}
 
-/// 将行内公式转化为高保真 Unicode 数学字符流（KaTeX 专用字体字形，支持数学斜体变量、希腊符号、上下标与算子）
-fn format_inline_math(math: &str) -> String {
-    let mut out = String::new();
-    let chars: Vec<char> = math.chars().collect();
-    let len = chars.len();
-    let mut i = 0;
+    fn parse(&mut self) -> MathNode {
+        self.parse_sequence(None)
+    }
 
-    while i < len {
-        let ch = chars[i];
-
-        // 1. 处理 LaTeX 宏命令 (\left, \right, \frac, \sqrt, \eta, \pi, \cos, \sin, \approx, \cdot 等)
-        if ch == '\\' {
-            i += 1;
-            if i >= len {
+    fn parse_sequence(&mut self, stop: Option<char>) -> MathNode {
+        let mut nodes = Vec::new();
+        while let Some(ch) = self.peek() {
+            if Some(ch) == stop {
                 break;
             }
 
-            // 特殊转义符号: \{, \}, \|, \;, \,, \!, \_
-            if chars[i] == '{' || chars[i] == '}' || chars[i] == '|' {
-                out.push(chars[i]);
-                i += 1;
-                continue;
-            }
-            if chars[i] == ';' || chars[i] == ',' || chars[i] == ':' {
-                out.push(' ');
-                i += 1;
-                continue;
-            }
-            if chars[i] == '!' {
-                i += 1;
-                continue;
-            }
-
-            let mut cmd = String::new();
-            while i < len && chars[i].is_alphabetic() {
-                cmd.push(chars[i]);
-                i += 1;
-            }
-
-            // 定界符宏：\left, \right
-            if cmd == "left" || cmd == "right" {
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                if i < len {
-                    if chars[i] == '\\' {
-                        i += 1;
-                        if i < len && (chars[i] == '{' || chars[i] == '}' || chars[i] == '|') {
-                            out.push(chars[i]);
-                            i += 1;
-                        }
-                    } else if chars[i] != '.' {
-                        out.push(chars[i]);
-                        i += 1;
-                    } else {
-                        i += 1; // 跳过 \left. 或 \right. 的虚点
+            let mut node = self.parse_atom();
+            loop {
+                match self.peek() {
+                    Some('_') => {
+                        self.next();
+                        node = MathNode::Subscript {
+                            base: Box::new(node),
+                            script: Box::new(self.parse_script_argument()),
+                        };
                     }
-                }
-                continue;
-            }
-
-            // 分式宏：\frac{num}{den}
-            if cmd == "frac" || cmd == "dfrac" || cmd == "tfrac" {
-                let mut num = String::new();
-                let mut den = String::new();
-
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                if i < len && chars[i] == '{' {
-                    i += 1;
-                    let n_start = i;
-                    let mut depth = 1;
-                    while i < len && depth > 0 {
-                        if chars[i] == '{' {
-                            depth += 1;
-                        } else if chars[i] == '}' {
-                            depth -= 1;
-                        }
-                        i += 1;
+                    Some('^') => {
+                        self.next();
+                        node = MathNode::Superscript {
+                            base: Box::new(node),
+                            script: Box::new(self.parse_script_argument()),
+                        };
                     }
-                    num = chars[n_start..i - 1].iter().collect();
-                } else if i < len {
-                    num.push(chars[i]);
-                    i += 1;
+                    _ => break,
                 }
-
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                if i < len && chars[i] == '{' {
-                    i += 1;
-                    let d_start = i;
-                    let mut depth = 1;
-                    while i < len && depth > 0 {
-                        if chars[i] == '{' {
-                            depth += 1;
-                        } else if chars[i] == '}' {
-                            depth -= 1;
-                        }
-                        i += 1;
-                    }
-                    den = chars[d_start..i - 1].iter().collect();
-                } else if i < len {
-                    den.push(chars[i]);
-                    i += 1;
-                }
-
-                let formatted_num = format_inline_math(&num);
-                let formatted_den = format_inline_math(&den);
-                out.push_str(&formatted_num);
-                out.push_str(" / ");
-                out.push_str(&formatted_den);
-                continue;
             }
-
-            // 根号宏：\sqrt{body} 或 \sqrt[n]{body}
-            if cmd == "sqrt" {
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                if i < len && chars[i] == '[' {
-                    while i < len && chars[i] != ']' {
-                        i += 1;
-                    }
-                    if i < len && chars[i] == ']' {
-                        i += 1;
-                    }
-                }
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                let mut body = String::new();
-                if i < len && chars[i] == '{' {
-                    i += 1;
-                    let b_start = i;
-                    let mut depth = 1;
-                    while i < len && depth > 0 {
-                        if chars[i] == '{' {
-                            depth += 1;
-                        } else if chars[i] == '}' {
-                            depth -= 1;
-                        }
-                        i += 1;
-                    }
-                    body = chars[b_start..i - 1].iter().collect();
-                } else if i < len {
-                    body.push(chars[i]);
-                    i += 1;
-                }
-
-                out.push_str("√(");
-                out.push_str(&format_inline_math(&body));
-                out.push(')');
-                continue;
-            }
-
-            // 文本与字体宏：\text{...}, \mathrm{...}, \mathbf{...}, \mathbb{...}
-            if cmd == "text"
-                || cmd == "mathrm"
-                || cmd == "mathbf"
-                || cmd == "bm"
-                || cmd == "boldsymbol"
-                || cmd == "mathbb"
-                || cmd == "mathcal"
-            {
-                while i < len && chars[i].is_whitespace() {
-                    i += 1;
-                }
-                let mut body = String::new();
-                if i < len && chars[i] == '{' {
-                    i += 1;
-                    let b_start = i;
-                    let mut depth = 1;
-                    while i < len && depth > 0 {
-                        if chars[i] == '{' {
-                            depth += 1;
-                        } else if chars[i] == '}' {
-                            depth -= 1;
-                        }
-                        i += 1;
-                    }
-                    body = chars[b_start..i - 1].iter().collect();
-                } else if i < len {
-                    body.push(chars[i]);
-                    i += 1;
-                }
-                out.push_str(&format_inline_math(&body));
-                continue;
-            }
-
-            // 空格控制宏
-            if cmd == "quad" {
-                out.push_str("  ");
-                continue;
-            }
-            if cmd == "qquad" {
-                out.push_str("    ");
-                continue;
-            }
-
-            if cmd == "mid" {
-                out.push_str(" ∣ ");
-                continue;
-            }
-
-            if cmd == "approx" {
-                out.push_str(" ≈ ");
-                continue;
-            }
-
-            if cmd == "cdot" {
-                out.push_str(" · ");
-                continue;
-            }
-
-            if cmd == "times" {
-                out.push_str(" × ");
-                continue;
-            }
-
-            if cmd == "pm" {
-                out.push_str(" ± ");
-                continue;
-            }
-
-            if cmd == "le" || cmd == "leq" {
-                out.push_str(" ≤ ");
-                continue;
-            }
-
-            if cmd == "ge" || cmd == "geq" {
-                out.push_str(" ≥ ");
-                continue;
-            }
-
-            // 优先匹配数学斜体希腊字母 (KaTeX_Math)
-            if let Some(greek) = to_math_italic_greek(&cmd) {
-                out.push_str(greek);
-                continue;
-            }
-
-            // 标准数学函数算子（正体 Roman）
-            if latex::is_function_operator(&cmd) {
-                out.push_str(&cmd);
-                continue;
-            }
-
-            // 其他特殊符号
-            if let Some(sym) = latex::lookup_symbol(&cmd) {
-                out.push_str(sym);
-            } else {
-                out.push_str(&cmd);
-            }
-            continue;
+            nodes.push(node);
         }
-
-        // 2. 处理下标 _b 或 _{i+1}
-        if ch == '_' {
-            i += 1;
-            if i < len && chars[i] == '{' {
-                i += 1;
-                let mut sub_chars = Vec::new();
-                while i < len && chars[i] != '}' {
-                    sub_chars.push(chars[i]);
-                    i += 1;
-                }
-                if i < len && chars[i] == '}' {
-                    i += 1;
-                }
-                let mut all_converted = true;
-                let mut converted = String::new();
-                for sc in sub_chars {
-                    if let Some(sub) = to_subscript_char(sc) {
-                        converted.push(sub);
-                    } else {
-                        all_converted = false;
-                        break;
-                    }
-                }
-                if all_converted {
-                    out.push_str(&converted);
-                } else {
-                    out.push_str("\\_");
-                }
-            } else if i < len {
-                let sc = chars[i];
-                i += 1;
-                if let Some(sub) = to_subscript_char(sc) {
-                    out.push(sub);
-                } else {
-                    out.push_str("\\_");
-                    if sc.is_ascii_alphabetic() {
-                        out.push(to_math_italic_char(sc));
-                    } else {
-                        out.push(sc);
-                    }
-                }
-            } else {
-                out.push_str("\\_");
-            }
-            continue;
-        }
-
-        // 3. 处理上标 ^2 或 ^{t-1}
-        if ch == '^' {
-            i += 1;
-            if i < len && chars[i] == '{' {
-                i += 1;
-                let mut sup_chars = Vec::new();
-                while i < len && chars[i] != '}' {
-                    sup_chars.push(chars[i]);
-                    i += 1;
-                }
-                if i < len && chars[i] == '}' {
-                    i += 1;
-                }
-                let mut all_converted = true;
-                let mut converted = String::new();
-                for sc in sup_chars {
-                    if let Some(sup) = to_superscript_char(sc) {
-                        converted.push(sup);
-                    } else {
-                        all_converted = false;
-                        break;
-                    }
-                }
-                if all_converted {
-                    out.push_str(&converted);
-                } else {
-                    out.push('^');
-                }
-            } else if i < len {
-                let sc = chars[i];
-                i += 1;
-                if let Some(sup) = to_superscript_char(sc) {
-                    out.push(sup);
-                } else {
-                    out.push('^');
-                    if sc.is_ascii_alphabetic() {
-                        out.push(to_math_italic_char(sc));
-                    } else {
-                        out.push(sc);
-                    }
-                }
-            } else {
-                out.push('^');
-            }
-            continue;
-        }
-
-        // 4. 连续多字母单词（如 cos, sin, exp 等普通文本函数名）保持正体，单个拉丁变量转为 Mathematical Italic 数学斜体
-        if ch.is_ascii_alphabetic() {
-            // 探测是否为多字母单词
-            let mut word = String::new();
-            let mut w_idx = i;
-            while w_idx < len && chars[w_idx].is_ascii_alphabetic() {
-                word.push(chars[w_idx]);
-                w_idx += 1;
-            }
-
-            if word.len() > 1
-                && (word == "cos"
-                    || word == "sin"
-                    || word == "tan"
-                    || word == "exp"
-                    || word == "log"
-                    || word == "ln"
-                    || word == "max"
-                    || word == "min"
-                    || word == "arg")
-            {
-                out.push_str(&word);
-                i = w_idx;
-                continue;
-            }
-
-            // 单字母变量一律转为 KaTeX 标准 Mathematical Italic 斜体
-            out.push(to_math_italic_char(ch));
-            i += 1;
-            continue;
-        }
-
-        // 5. 转义普通字符中的下划线，防止破坏 Markdown 斜体
-        if ch == '_' {
-            out.push_str("\\_");
-            i += 1;
-            continue;
-        }
-
-        out.push(ch);
-        i += 1;
+        MathNode::Sequence(nodes)
     }
-    out
+
+    fn parse_atom(&mut self) -> MathNode {
+        match self.peek() {
+            Some('\\') => self.parse_command(),
+            Some('{') => self.parse_group(),
+            Some(_) => MathNode::Text(self.next().unwrap().to_string()),
+            None => MathNode::Text(String::new()),
+        }
+    }
+
+    fn parse_group(&mut self) -> MathNode {
+        self.next();
+        let node = self.parse_sequence(Some('}'));
+        if self.peek() == Some('}') {
+            self.next();
+        }
+        node
+    }
+
+    fn parse_script_argument(&mut self) -> MathNode {
+        self.skip_whitespace();
+        if self.peek() == Some('{') {
+            self.parse_group()
+        } else {
+            self.parse_atom()
+        }
+    }
+
+    fn parse_command(&mut self) -> MathNode {
+        self.next();
+        let Some(first) = self.next() else {
+            return MathNode::Text("\\".to_string());
+        };
+
+        if matches!(first, '{' | '}' | '|') {
+            return MathNode::Text(first.to_string());
+        }
+        if matches!(first, ';' | ',' | ':') {
+            return MathNode::Text(" ".to_string());
+        }
+        if first == '!' {
+            return MathNode::Text(String::new());
+        }
+
+        let mut name = String::from(first);
+        while self.peek().is_some_and(char::is_alphabetic) {
+            name.push(self.next().unwrap());
+        }
+
+        let args = match name.as_str() {
+            "frac" | "dfrac" | "tfrac" => {
+                vec![self.parse_script_argument(), self.parse_script_argument()]
+            }
+            "sqrt" => {
+                self.skip_whitespace();
+                if self.peek() == Some('[') {
+                    self.next();
+                    while let Some(ch) = self.next() {
+                        if ch == ']' {
+                            break;
+                        }
+                    }
+                }
+                vec![self.parse_script_argument()]
+            }
+            "text" | "mathrm" | "mathbf" | "bm" | "boldsymbol" | "mathbb" | "mathcal" => {
+                vec![self.parse_script_argument()]
+            }
+            "left" | "right" => {
+                self.skip_whitespace();
+                let delimiter = if self.peek() == Some('\\') {
+                    self.next();
+                    self.next().unwrap_or_default()
+                } else {
+                    self.next().unwrap_or_default()
+                };
+                if delimiter == '.' {
+                    Vec::new()
+                } else {
+                    vec![MathNode::Text(delimiter.to_string())]
+                }
+            }
+            _ => Vec::new(),
+        };
+
+        MathNode::Command { name, args }
+    }
 }
 
+/// 校验行内公式的层级结构并保留原始 LaTeX。
+/// 实际排版统一交给 MathElement，避免复杂文本上下标退回普通 Markdown。
+fn format_inline_math(math: &str) -> String {
+    let mut parser = MathParser::new(math);
+    let _ = parser.parse();
+    math.to_string()
+}
 /// 第一阶段：优先扫描切分出块级 LaTeX 公式段与 Markdown 文本段（行内公式保留在段落文本流中）
 fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
     let mut segments = Vec::new();
@@ -686,8 +351,13 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
                         is_display: true,
                     });
                 } else if !trimmed_math.is_empty() {
-                    let formatted = format_inline_math(trimmed_math);
-                    current_text.push_str(&formatted);
+                    if !current_text.trim().is_empty() {
+                        segments.push(MarkdownSegment::Text(std::mem::take(&mut current_text)));
+                    }
+                    segments.push(MarkdownSegment::Math {
+                        latex: format_inline_math(trimmed_math),
+                        is_display: false,
+                    });
                 }
             } else {
                 current_text.push_str("\\(");
@@ -734,9 +404,14 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
                         is_display: true,
                     });
                 } else if !trimmed_math.is_empty() {
-                    // 行内公式：留在当前段落文本流中，保证句子连贯不换行
-                    let formatted = format_inline_math(trimmed_math);
-                    current_text.push_str(&formatted);
+                    // 行内公式也交给 MathElement，避免复杂上下标退回普通 Markdown 文本。
+                    if !current_text.trim().is_empty() {
+                        segments.push(MarkdownSegment::Text(std::mem::take(&mut current_text)));
+                    }
+                    segments.push(MarkdownSegment::Math {
+                        latex: format_inline_math(trimmed_math),
+                        is_display: false,
+                    });
                 }
             } else {
                 current_text.push('$');
@@ -758,6 +433,56 @@ fn parse_markdown_segments(text: &str) -> Vec<MarkdownSegment> {
 use gpui_component::Icon;
 use gpui_component::IconName;
 use gpui_component::h_flex;
+
+fn render_inline_flow(
+    base_id: &str,
+    parts: Vec<(usize, MarkdownSegment)>,
+    font_size: Pixels,
+    text_color: Hsla,
+    heading_style: Option<&TextViewStyle>,
+) -> impl IntoElement {
+    let mut flow = div()
+        .w_full()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x_1()
+        .gap_y_1();
+
+    for (ix, segment) in parts {
+        match segment {
+            MarkdownSegment::Text(text) => {
+                let mut view = TextView::markdown(
+                    SharedString::from(format!("{base_id}-text-{ix}")),
+                    SharedString::from(text),
+                )
+                .selectable(true)
+                .text_size(font_size)
+                .text_color(text_color);
+                if let Some(style) = heading_style {
+                    view = view.style(style.clone());
+                }
+                flow = flow.child(view);
+            }
+            MarkdownSegment::Math {
+                latex,
+                is_display: false,
+            } => {
+                flow = flow.child(
+                    MathElement::new(latex)
+                        .text_size(font_size)
+                        .color(text_color)
+                        .display(false),
+                );
+            }
+            MarkdownSegment::Math {
+                is_display: true, ..
+            } => unreachable!("display math must be rendered outside the inline flow"),
+        }
+    }
+
+    flow
+}
 
 /// 渲染包含纯原生 LaTeX 矢量公式的 Markdown 视图（支持公式段优先切分与原生矢量排版）
 pub fn render_math_markdown(
@@ -798,25 +523,30 @@ pub fn render_math_markdown(
     }
 
     let mut container = v_flex().w_full().gap_1();
+    let mut inline_parts = Vec::new();
 
     for (ix, seg) in segments.into_iter().enumerate() {
         match seg {
-            MarkdownSegment::Text(txt) => {
-                let seg_id = format!("{}-txt-{}", base_id_str, ix);
-                let mut tv =
-                    TextView::markdown(SharedString::from(seg_id), SharedString::from(txt))
-                        .selectable(true)
-                        .text_size(font_size)
-                        .text_color(text_color);
-
-                if let Some(ref style) = heading_style {
-                    tv = tv.style(style.clone());
+            segment @ (MarkdownSegment::Text(_)
+            | MarkdownSegment::Math {
+                is_display: false, ..
+            }) => inline_parts.push((ix, segment)),
+            // 原生 LaTeX 矢量公式节点：100% 交由 MathElement 矢量排版，并支持一键复制 LaTeX 源码
+            MarkdownSegment::Math {
+                latex,
+                is_display: true,
+            } => {
+                if !inline_parts.is_empty() {
+                    container = container.child(render_inline_flow(
+                        &base_id_str,
+                        std::mem::take(&mut inline_parts),
+                        font_size,
+                        text_color,
+                        heading_style.as_ref(),
+                    ));
                 }
 
-                container = container.child(tv);
-            }
-            // 原生 LaTeX 矢量公式节点：100% 交由 MathElement 矢量排版，并支持一键复制 LaTeX 源码
-            MarkdownSegment::Math { latex, is_display } => {
+                let is_display = true;
                 let math_src = latex.clone();
                 let seg_id = format!("{}-math-{}", base_id_str, ix);
                 let is_copied = copied_formula_id.as_deref() == Some(&seg_id);
@@ -902,5 +632,69 @@ pub fn render_math_markdown(
         }
     }
 
+    if !inline_parts.is_empty() {
+        container = container.child(render_inline_flow(
+            &base_id_str,
+            inline_parts,
+            font_size,
+            text_color,
+            heading_style.as_ref(),
+        ));
+    }
+
     div().w_full().child(container)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_nested_text_command_inside_subscript() {
+        let mut parser = MathParser::new(r"P_{\text{collect}}");
+        let tree = parser.parse();
+
+        assert_eq!(
+            tree,
+            MathNode::Sequence(vec![MathNode::Subscript {
+                base: Box::new(MathNode::Text("P".to_string())),
+                script: Box::new(MathNode::Sequence(vec![MathNode::Command {
+                    name: "text".to_string(),
+                    args: vec![MathNode::Sequence(
+                        "collect"
+                            .chars()
+                            .map(|ch| MathNode::Text(ch.to_string()))
+                            .collect(),
+                    )],
+                }])),
+            },])
+        );
+    }
+
+    #[test]
+    fn keeps_nested_script_groups_balanced() {
+        let source = r"\frac{a_{i+1}}{b^{t-1}}";
+        assert_eq!(format_inline_math(source), source);
+    }
+
+    #[test]
+    fn formats_existing_simple_scripts() {
+        assert_eq!(format_inline_math("x_i"), "x_i");
+        assert_eq!(format_inline_math("x^2"), "x^2");
+    }
+
+    #[test]
+    fn keeps_inline_math_as_a_math_element_segment() {
+        let segments = parse_markdown_segments("数据 $U_{\\text{batch}}$ 上：");
+
+        assert!(matches!(segments.first(), Some(MarkdownSegment::Text(_))));
+        assert!(matches!(
+            segments.get(1),
+            Some(MarkdownSegment::Math {
+                latex,
+                is_display: false,
+            }) if latex == r"U_{\text{batch}}"
+        ));
+        assert!(matches!(segments.get(2), Some(MarkdownSegment::Text(_))));
+    }
 }

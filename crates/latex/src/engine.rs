@@ -1408,7 +1408,7 @@ impl MathEngine {
 
                     // 递归排版 body 文本内容（如果是 \mathrm, \text, \mathbf 则统一定制样式）
                     let force_font = match cmd.as_str() {
-                        "mathrm" | "text" => Some(crate::font::KATEX_MAIN_FONT),
+                        "mathrm" | "text" => Some(crate::font::KATEX_SANS_SERIF_FONT),
                         "mathbf" | "boldsymbol" | "bm" => Some(crate::font::KATEX_BOLD_FONT),
                         _ => None,
                     };

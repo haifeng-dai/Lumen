@@ -2,6 +2,8 @@
 pub const KATEX_MATH_FONT: &str = "KaTeX_Math";
 /// 内置数学正体/数字/运算符字体名称（打包在主程序 assets/fonts/）
 pub const KATEX_MAIN_FONT: &str = "KaTeX_Main";
+/// 内置无衬线文本字体名称（打包在主程序 assets/fonts/）
+pub const KATEX_SANS_SERIF_FONT: &str = "KaTeX_SansSerif";
 /// 内置 AMS 符号/黑板粗体数集字体名称
 pub const KATEX_AMS_FONT: &str = "KaTeX_AMS";
 /// 内置花体字母字体名称
