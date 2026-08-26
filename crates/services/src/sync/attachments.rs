@@ -270,7 +270,28 @@ impl FileSyncService {
                         Ok(new_etag) => {
                             let mut updated_att = att.clone();
                             updated_att.etag = new_etag;
-                            updated_att.hash = compute_file_hash(local_file_path);
+                            let hash_path = local_file_path.to_path_buf();
+                            updated_att.hash = match tokio::task::spawn_blocking(move || {
+                                compute_file_hash(&hash_path)
+                            })
+                            .await
+                            {
+                                Ok(Ok(hash)) => Some(hash),
+                                Ok(Err(e)) => {
+                                    warn!(
+                                        "存储管理: [Upload] '{}' 上传成功，但无法计算完整 SHA-256: {e}",
+                                        att.file_name
+                                    );
+                                    None
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "存储管理: [Upload] '{}' 上传成功，但 hash 任务异常结束: {e}",
+                                        att.file_name
+                                    );
+                                    None
+                                }
+                            };
                             self.db.insert_attachment(&updated_att)?;
                             debug!(
                                 "存储管理: [Upload] '{}' 上传成功，等待元数据同步",
@@ -699,13 +720,92 @@ impl FileSyncService {
     }
 }
 
-const HASH_READ_SIZE: usize = 10 * 1024 * 1024; // 10MB
+/// Bounded buffer size for full-file hashing. Hashing never loads a whole attachment into memory.
+const HASH_BUFFER_SIZE: usize = 64 * 1024;
 
-fn compute_file_hash(path: &std::path::Path) -> Option<String> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let mut buf = vec![0u8; HASH_READ_SIZE];
-    let n = file.read(&mut buf).ok()?;
-    buf.truncate(n);
-    let hash = Sha256::digest(&buf);
-    Some(format!("{:x}", hash))
+/// Computes a SHA-256 digest over every byte in an attachment.
+///
+/// The caller is responsible for running this blocking file I/O outside an async worker thread.
+fn compute_file_hash(path: &std::path::Path) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; HASH_BUFFER_SIZE];
+
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::{Seek, SeekFrom, Write};
+
+    fn test_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("lumen-{name}-{}.bin", uuid::Uuid::new_v4()))
+    }
+
+    fn write_repeated(file: &mut File, byte: u8, len: usize) -> std::io::Result<()> {
+        let chunk = [byte; HASH_BUFFER_SIZE];
+        let mut remaining = len;
+        while remaining > 0 {
+            let bytes_to_write = remaining.min(chunk.len());
+            file.write_all(&chunk[..bytes_to_write])?;
+            remaining -= bytes_to_write;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hashes_empty_files_with_standard_sha256() {
+        let path = test_path("empty-hash");
+        File::create(&path).unwrap();
+
+        let hash = compute_file_hash(&path).unwrap();
+
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn hashes_bytes_after_the_legacy_ten_megabyte_boundary() {
+        const LEGACY_HASH_READ_SIZE: usize = 10 * 1024 * 1024;
+        let path = test_path("full-file-hash");
+        let mut file = File::create(&path).unwrap();
+        write_repeated(&mut file, 0xA5, LEGACY_HASH_READ_SIZE).unwrap();
+        file.write_all(b"first suffix").unwrap();
+        file.flush().unwrap();
+
+        let first_hash = compute_file_hash(&path).unwrap();
+
+        let mut file = OpenOptions::new().write(true).open(&path).unwrap();
+        file.seek(SeekFrom::Start(LEGACY_HASH_READ_SIZE as u64))
+            .unwrap();
+        file.write_all(b"other suffix").unwrap();
+        file.flush().unwrap();
+
+        let second_hash = compute_file_hash(&path).unwrap();
+
+        fs::remove_file(&path).unwrap();
+        assert_ne!(first_hash, second_hash);
+    }
+
+    #[test]
+    fn reports_file_read_errors_to_the_caller() {
+        let path = test_path("missing-hash");
+
+        let error = compute_file_hash(&path).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
 }
