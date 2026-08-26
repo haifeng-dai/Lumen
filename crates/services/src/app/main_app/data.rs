@@ -11,6 +11,10 @@ impl MainApp {
         Ok(())
     }
 
+    pub fn check_local_files(&self) -> Result<(usize, Vec<String>)> {
+        self.attachment_service.check_local_files(&self.db)
+    }
+
     pub fn clear_local_database(&self) -> Result<()> {
         info!("MainApp: 开始清空本地数据库...");
         self.db.rebuild_schema()?;
@@ -54,5 +58,12 @@ impl MainApp {
         }
         info!("MainApp: 本地数据库清空完成");
         Ok(())
+    }
+
+    pub async fn purge_deleted_data(&self) -> Result<usize> {
+        let total = self.sync_service.purge_deleted_data().await?;
+        self.notify_data_changed();
+        self.notify_ui_changed();
+        Ok(total)
     }
 }

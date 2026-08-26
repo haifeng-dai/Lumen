@@ -219,6 +219,10 @@ impl SQLSyncService {
         handle.await.map_err(|e| anyhow::anyhow!("任务失败: {e}"))?
     }
 
+    pub async fn purge_deleted_data(&self) -> anyhow::Result<usize> {
+        self.mysql.purge_deleted_data().await
+    }
+
     pub async fn get_sync_status(&self) -> SyncStatus {
         self.sync_status.lock().await.clone()
     }

@@ -95,4 +95,8 @@ impl MySqlManager {
     pub async fn clear_all_data(&self) -> Result<()> {
         schema::clear_all_data(self).await
     }
+
+    pub async fn purge_deleted_data(&self) -> Result<usize> {
+        schema::purge_deleted_data(self).await
+    }
 }

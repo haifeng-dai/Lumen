@@ -1,4 +1,5 @@
 use crate::app_state::config::ConfigStore;
+use crate::ui::notification::{NotificationType, show_notification};
 use components::{IconName, password_input};
 use gpui::prelude::*;
 use gpui::{AppContext, AsyncApp, Entity, SharedString, div, rems};
@@ -13,6 +14,7 @@ use gpui_component::{
 use i18n::{I18nKey, t};
 use log::{error, info};
 use services::app::MainApp;
+use services::runtime::RUNTIME;
 use std::sync::Arc;
 
 use super::{
@@ -593,6 +595,8 @@ impl SettingsWindow {
                     move |_, _, cx| {
                         let l = lang(cx);
                         h_flex()
+                            .w_full()
+                            .flex_wrap()
                             .gap_2()
                             .child(
                                 Button::new("clear-local-db")
@@ -618,6 +622,41 @@ impl SettingsWindow {
                                         move |_, _, _cx| {
                                             if let Err(e) = app.file_manager.trash_all() {
                                                 error!("清空本地文件失败: {e}");
+                                            }
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new("check-local-files")
+                                    .label(t(I18nKey::CheckLocalFiles, l))
+                                    .small()
+                                    .on_click({
+                                        let app = app.clone();
+                                        move |_, _, cx| match app.check_local_files() {
+                                            Ok((checked, missing)) if missing.is_empty() => {
+                                                show_notification(
+                                                    NotificationType::Success,
+                                                    format!("本地文件校对完成：共检查 {checked} 个，全部存在"),
+                                                    cx,
+                                                );
+                                            }
+                                            Ok((checked, missing)) => {
+                                                show_notification(
+                                                    NotificationType::Warning,
+                                                    format!(
+                                                        "本地文件校对完成：共检查 {checked} 个，缺失 {} 个",
+                                                        missing.len()
+                                                    ),
+                                                    cx,
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!("校对本地文件失败: {e}");
+                                                show_notification(
+                                                    NotificationType::Error,
+                                                    format!("校对本地文件失败: {e}"),
+                                                    cx,
+                                                );
                                             }
                                         }
                                     }),
@@ -672,6 +711,26 @@ impl SettingsWindow {
                                         move |_, _, _cx| match app.purge_synced_deletions() {
                                             Ok(n) => info!("清理已删除数据完成，共 {n} 条"),
                                             Err(e) => error!("清理已删除数据失败: {e}"),
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new("purge-deleted-data")
+                                    .label(t(I18nKey::PurgeDeletedData, l))
+                                    .small()
+                                    .text_color(cx.theme().danger)
+                                    .on_click({
+                                        let app = app.clone();
+                                        move |_, _, _cx| {
+                                            let app = app.clone();
+                                            RUNTIME.spawn(async move {
+                                                match app.purge_deleted_data().await {
+                                                    Ok(n) => {
+                                                        info!("彻底清理已删除数据完成，共 {n} 条")
+                                                    }
+                                                    Err(e) => error!("彻底清理已删除数据失败: {e}"),
+                                                }
+                                            });
                                         }
                                     }),
                             )

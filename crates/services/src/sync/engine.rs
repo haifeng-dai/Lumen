@@ -272,6 +272,22 @@ impl SyncService {
             .map_err(|e| anyhow::anyhow!("清空远程文件任务失败: {e}"))?
     }
 
+    pub async fn purge_deleted_data(&self) -> Result<usize> {
+        let remote_files = self.file_sync.purge_deleted_files().await?;
+        let remote_rows = self.sql_sync.purge_deleted_data().await?;
+        let (local_rows, attachment_paths) = self.db.purge_all_deleted()?;
+        for path in attachment_paths {
+            if let Err(e) = self.file_manager.trash_file(&path) {
+                warn!("存储管理: [Purge] 删除本地附件失败 '{}': {e}", path);
+            }
+        }
+        info!(
+            "存储管理: [Purge] 清理完成，远程文件 {} 个，远程记录 {} 条，本地记录 {} 条",
+            remote_files, remote_rows, local_rows
+        );
+        Ok(remote_files + remote_rows + local_rows)
+    }
+
     pub async fn delete_remote_file(&self, filename: &str) -> Result<()> {
         self.file_sync.delete_remote_file(filename).await
     }

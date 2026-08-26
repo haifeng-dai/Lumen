@@ -695,6 +695,39 @@ impl FileSyncService {
         Ok(())
     }
 
+    /// 删除与本地软删除附件对应、且未被有效附件继续引用的远程文件。
+    pub async fn purge_deleted_files(&self) -> anyhow::Result<usize> {
+        let remote_entries = self.backend().await.list().await?;
+        let local_attachments = self.db.get_all_attachments_include_deleted()?;
+        let active_names: std::collections::HashSet<String> = local_attachments
+            .iter()
+            .filter(|att| !att.is_deleted)
+            .map(|att| att.file_name.nfc().collect())
+            .collect();
+        let deleted_names: std::collections::HashSet<String> = local_attachments
+            .iter()
+            .filter(|att| att.is_deleted)
+            .map(|att| att.file_name.nfc().collect())
+            .collect();
+
+        let mut deleted = 0;
+        for entry in remote_entries {
+            let normalized_name = entry.name.nfc().collect::<String>();
+            if active_names.contains(&normalized_name) || !deleted_names.contains(&normalized_name)
+            {
+                continue;
+            }
+            info!(
+                "存储管理: [Purge] 删除已软删除附件对应的远程文件 '{}'",
+                entry.name
+            );
+            self.backend().await.delete(entry.name).await?;
+            deleted += 1;
+        }
+        info!("存储管理: [Purge] 已删除 {deleted} 个远程孤立附件");
+        Ok(deleted)
+    }
+
     /// 删除远程文件（直接操作）
     pub async fn delete_remote_file(&self, filename: &str) -> Result<()> {
         let backend = self.backend().await;

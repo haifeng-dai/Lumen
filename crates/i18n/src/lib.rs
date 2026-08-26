@@ -359,9 +359,11 @@ pub enum I18nKey {
     DataManagement,
     ClearLocalDb,
     ClearLocalFiles,
+    CheckLocalFiles,
     ClearCloudDb,
     ClearCloudFiles,
     PurgeSyncedDeletions,
+    PurgeDeletedData,
 
     // PDF Viewer
     PdfViewerSettings,

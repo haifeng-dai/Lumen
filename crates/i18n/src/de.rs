@@ -374,8 +374,10 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DataManagement => "Data Management",
         I18nKey::ClearLocalDb => "Clear Local Database",
         I18nKey::ClearLocalFiles => "Clear Local Files",
+        I18nKey::CheckLocalFiles => "Check Local Files",
         I18nKey::ClearCloudDb => "Clear Cloud Database",
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Gelöschte Daten bereinigen",
+        I18nKey::PurgeDeletedData => "Gelöschte Daten vollständig bereinigen (lokal + remote)",
     }
 }

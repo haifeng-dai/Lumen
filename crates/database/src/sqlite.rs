@@ -74,4 +74,41 @@ impl Database {
         tx.commit()?;
         Ok(result)
     }
+
+    /// Physically removes every locally soft-deleted row.
+    ///
+    /// This is intentionally separate from the normal synced-tombstone purge:
+    /// callers must first finish remote cleanup before invoking it.
+    pub fn purge_all_deleted(&self) -> Result<(usize, Vec<String>)> {
+        self.with_transaction(|tx| {
+            let mut attachment_paths = Vec::new();
+            let mut stmt = tx.prepare("SELECT file_path FROM attachments WHERE is_deleted = 1")?;
+            for path in stmt.query_map([], |row| row.get::<_, String>(0))? {
+                attachment_paths.push(path?);
+            }
+
+            let tables = [
+                "literature_notes",
+                "literature_authors",
+                "literature_folders",
+                "literature_tags",
+                "literature_citations",
+                "attachments",
+                "annotations",
+                "literatures",
+                "folders",
+                "tags",
+                "feeds",
+                "feed_items",
+                "authors",
+                "publications",
+            ];
+            let mut total = 0;
+            for table in tables {
+                total += tx.execute(&format!("DELETE FROM {table} WHERE is_deleted = 1"), [])?;
+            }
+
+            Ok((total, attachment_paths))
+        })
+    }
 }

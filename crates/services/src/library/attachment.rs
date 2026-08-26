@@ -27,6 +27,41 @@ impl AttachmentService {
             .unwrap_or_default()
     }
 
+    /// 校对所有未删除文献的有效附件是否仍存在于本地文件系统。
+    pub fn check_local_files(&self, db: &Database) -> Result<(usize, Vec<String>)> {
+        let literatures = db.get_all_literatures()?;
+        let mut checked = 0;
+        let mut missing = Vec::new();
+
+        for literature in literatures
+            .iter()
+            .filter(|literature| !literature.is_deleted)
+        {
+            for attachment in literature
+                .attachments
+                .iter()
+                .filter(|attachment| !attachment.is_deleted)
+            {
+                checked += 1;
+                let path = Path::new(&attachment.file_path);
+                if !path.is_file() {
+                    warn!(
+                        "附件校对: 未找到文献附件 '{}' ({})",
+                        attachment.file_name, attachment.file_path
+                    );
+                    missing.push(attachment.file_path.clone());
+                }
+            }
+        }
+
+        info!(
+            "附件校对完成: 检查 {} 个有效附件，缺失 {} 个",
+            checked,
+            missing.len()
+        );
+        Ok((checked, missing))
+    }
+
     /// 清理孤立附件（未被数据库引用的物理文件）
     pub fn cleanup_orphaned_files(
         &self,
