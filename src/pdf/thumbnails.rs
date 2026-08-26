@@ -25,35 +25,36 @@ impl super::PdfReaderView {
 
     /// Cmd/Ctrl 点击：切换该页选中态，不影响其他。
     pub(crate) fn toggle_thumbnail_selection(&mut self, page: u16, cx: &mut Context<Self>) {
-        if self.selected_thumbnails.contains(&page) {
-            self.selected_thumbnails.remove(&page);
-            if self.last_anchor_page == Some(page) {
-                self.last_anchor_page = None;
+        // 修饰键选择默认包含当前阅读页。
+        let current_page = self.current_page;
+        self.selected_thumbnails.insert(current_page);
+        self.last_anchor_page = Some(current_page);
+
+        // 点击当前页时保持其选中，避免先加入当前页后又被切换逻辑移除。
+        if page != current_page {
+            if self.selected_thumbnails.contains(&page) {
+                self.selected_thumbnails.remove(&page);
+            } else {
+                self.selected_thumbnails.insert(page);
             }
-        } else {
-            self.selected_thumbnails.insert(page);
-            self.last_anchor_page = Some(page);
         }
         cx.notify();
     }
 
-    /// Shift 点击：以 last_anchor_page 为起点到当前页做范围选（含两端）。
+    /// Shift 点击：以当前阅读页为起点到点击页做范围选（含两端）。
     pub(crate) fn range_select_thumbnails(&mut self, page: u16, cx: &mut Context<Self>) {
-        let start = match self.last_anchor_page {
-            Some(p) => p,
-            None => {
-                self.select_thumbnail(page, cx);
-                return;
-            }
-        };
+        let start = self.current_page;
         let (lo, hi) = if page >= start {
             (start, page)
         } else {
             (page, start)
         };
+
+        self.selected_thumbnails.clear();
         for p in lo..=hi {
             self.selected_thumbnails.insert(p);
         }
+        self.last_anchor_page = Some(start);
         cx.notify();
     }
 
