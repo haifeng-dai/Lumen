@@ -51,7 +51,7 @@ pub struct MainApp {
     /// 本地 UI 状态 (内存中)
     pub local_state: Arc<std::sync::RwLock<models::local_state::AppUiState>>,
     /// 本地状态管理器 (数据库)
-    pub local_state_manager: Arc<crate::state::LocalStateManager>,
+    pub local_state_manager: Arc<database::state::LocalStateManager>,
     /// 翻译服务
     pub translation_service: Arc<Mutex<TranslationService>>,
     /// 跨线程通知通道发送端（桥接 GPUI !Send 限制）

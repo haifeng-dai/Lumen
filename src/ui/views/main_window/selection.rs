@@ -71,11 +71,6 @@ impl super::MainWindow {
             }
         });
     }
-    pub fn add_feed_item_selection(&mut self, id: String, cx: &mut Context<Self>) {
-        UiState::update(cx, |state| {
-            state.selected_feed_item_ids.insert(id);
-        });
-    }
     pub fn set_view_mode(&mut self, mode: AppViewMode, cx: &mut Context<Self>) {
         UiState::update(cx, |state| {
             state.view_mode = mode;

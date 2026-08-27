@@ -142,7 +142,7 @@ impl AiBackendEntry {
     }
 }
 
-pub use models::chat::ChatResponseChunk;
+use models::chat::ChatResponseChunk;
 
 pub struct ChatResponseStream {
     rx: mpsc::UnboundedReceiver<Result<ChatResponseChunk>>,

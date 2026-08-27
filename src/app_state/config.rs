@@ -1,8 +1,8 @@
 use gpui::{App, Global};
 use i18n::Language;
 
+use database::state::LocalStateManager;
 use models::config::AppConfig;
-use services::state::LocalStateManager;
 
 pub struct ConfigStore {
     pub inner: AppConfig,

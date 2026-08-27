@@ -249,7 +249,7 @@ impl SyncService {
         self.file_sync.test_backend_config(name, config_json).await
     }
 
-    pub async fn test_mysql_config(&self, config: database::DatabaseConfig) -> Result<()> {
+    pub async fn test_mysql_config(&self, config: models::DatabaseConfig) -> Result<()> {
         self.sql_sync.test_mysql_config(config).await
     }
 

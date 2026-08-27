@@ -15,12 +15,3 @@ use tokio::runtime::Runtime;
 
 pub static RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
-
-// ============================
-// 版本信息
-// =============================
-
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const NAME: &str = "Lumen";
-
-pub const STATUS: &str = "Beta";

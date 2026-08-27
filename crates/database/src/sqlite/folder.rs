@@ -88,24 +88,6 @@ impl Database {
         })
     }
 
-    /// 获取特定父文件夹下的子文件夹
-    pub fn get_child_folders(&self, parent_id: Option<String>) -> Result<Vec<Folder>> {
-        debug!("数据库: 正在获取父文件夹 {parent_id:?} 的子文件夹");
-        self.with_conn(|conn| {
-            let folders = if let Some(ref pid) = parent_id {
-                let mut s = conn.prepare("SELECT id, name, folder_type, parent_id, is_dirty, is_deleted, version, created_at, updated_at FROM folders WHERE parent_id = ?1 AND is_deleted = 0 ORDER BY name ASC")?;
-                let folder_iter = s.query_map([pid], |row| self.map_folder_row(row))?;
-                folder_iter.collect::<Result<Vec<_>>>()?
-            } else {
-                let mut s = conn.prepare("SELECT id, name, folder_type, parent_id, is_dirty, is_deleted, version, created_at, updated_at FROM folders WHERE parent_id IS NULL AND folder_type = 'custom' AND is_deleted = 0 ORDER BY name ASC")?;
-                let folder_iter = s.query_map([], |row| self.map_folder_row(row))?;
-                folder_iter.collect::<Result<Vec<_>>>()?
-            };
-            debug!("数据库: 找到 {} 个子文件夹", folders.len());
-            Ok(folders)
-        })
-    }
-
     /// 删除文件夹及其所有子文件夹 (递归删除逻辑)
     /// 关联文献不会被删除，但 literature_folders 关联会被软删除，
     /// 使文献自动出现在「未分类」视图中
@@ -264,69 +246,6 @@ impl Database {
             )?;
             info!("数据库: 已清理 {count} 个已同步删除的文件夹");
             Ok(count)
-        })
-    }
-
-    /// 合并文件夹归属关系：将源文献的文件夹归属迁移到目标文献
-    pub fn merge_folder_relations(&self, source_id: &str, target_id: &str) -> Result<()> {
-        info!("数据库: 正在合并文件夹归属 ({source_id} -> {target_id})");
-        self.with_conn(|conn| {
-            let now = chrono::Local::now().timestamp();
-
-            // 1. 获取源文献的文件夹列表
-            let mut stmt = conn.prepare("SELECT folder_id FROM literature_folders WHERE literature_id = ?1 AND is_deleted = 0")?;
-            let source_folders: Vec<String> = stmt
-                .query_map([source_id], |row| row.get(0))?
-                .collect::<Result<Vec<String>>>()?;
-
-            // 2. 获取目标文献的文件夹列表 (用于去重)
-            let mut stmt = conn.prepare("SELECT folder_id FROM literature_folders WHERE literature_id = ?1 AND is_deleted = 0")?;
-            let target_folders: std::collections::HashSet<String> = stmt
-                .query_map([target_id], |row| row.get(0))?
-                .collect::<Result<Vec<String>>>()?
-                .into_iter()
-                .collect();
-
-            // 3. 迁移不重复的文件夹
-            let mut added_count = 0;
-            for folder_id in source_folders {
-                if !target_folders.contains(&folder_id) {
-                    let existing_info: Option<(bool, i32)> = conn.query_row(
-                        "SELECT is_deleted, version FROM literature_folders WHERE literature_id = ?1 AND folder_id = ?2",
-                        [target_id, &folder_id],
-                        |row| Ok((row.get(0)?, row.get(1)?))
-                    ).optional()?;
-
-                    match existing_info {
-                        Some((is_deleted, version)) => {
-                            if is_deleted {
-                                // 恢复
-                                conn.execute(
-                                    "UPDATE literature_folders SET is_deleted = 0, is_dirty = 1, version = ?1, updated_at = ?2 WHERE literature_id = ?3 AND folder_id = ?4",
-                                    params![version + 1, now, target_id, folder_id]
-                                )?;
-                            }
-                        }
-                        None => {
-                            // 插入新关联
-                            conn.execute(
-                                "INSERT INTO literature_folders (literature_id, folder_id, is_dirty, is_deleted, version, updated_at) VALUES (?1, ?2, 1, 0, 1, ?3)",
-                                params![target_id, folder_id, now]
-                            )?;
-                        }
-                    }
-                    added_count += 1;
-                }
-
-                // 标记删除源文献的关联
-                conn.execute(
-                    "UPDATE literature_folders SET is_deleted = 1, is_dirty = 1, version = version + 1, updated_at = ?1 WHERE literature_id = ?2 AND folder_id = ?3",
-                    params![now, source_id, folder_id]
-                )?;
-            }
-
-            info!("数据库: 已迁移 {added_count} 个文件夹归属 ({source_id} -> {target_id})");
-            Ok(())
         })
     }
 }

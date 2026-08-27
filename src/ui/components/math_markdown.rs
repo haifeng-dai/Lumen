@@ -638,7 +638,7 @@ pub fn render_math_markdown(
                                                                         cx.background_executor()
                                                                             .timer(std::time::Duration::from_millis(1500))
                                                                             .await;
-                                                                        let _ = cx.update(|cx| {
+                                                                        cx.update(|cx| {
                                                                             crate::app_state::ui::UiState::update(cx, |s| {
                                                                                 if s.copied_formula_id.as_deref() == Some(&seg_id) {
                                                                                     s.copied_formula_id = None;

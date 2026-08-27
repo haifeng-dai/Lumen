@@ -9,7 +9,6 @@
 
 use models::AdvancedSearchQuery;
 use models::Literature;
-use models::SearchField;
 use parser::normalize::author_full_name;
 use std::sync::Arc;
 
@@ -85,30 +84,6 @@ impl SearchEngine {
                 }
 
                 true
-            })
-            .collect()
-    }
-
-    /// 针对特定字段的搜索
-    pub fn search_in_field<'a>(
-        query: &str,
-        items: impl IntoIterator<Item = &'a Arc<Literature>>,
-        field: SearchField,
-    ) -> Vec<&'a Arc<Literature>> {
-        let query_trim = query.trim();
-        if query_trim.is_empty() {
-            return items.into_iter().collect();
-        }
-
-        let query_lower = query_trim.to_lowercase();
-
-        items
-            .into_iter()
-            .filter(|lit| match field {
-                SearchField::Title => Self::match_title(&query_lower, lit),
-                SearchField::Author => Self::match_author(&query_lower, lit),
-                SearchField::Journal => Self::match_journal(&query_lower, lit),
-                SearchField::All => Self::is_match(&query_lower, lit),
             })
             .collect()
     }

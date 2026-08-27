@@ -324,15 +324,6 @@ impl ToolbarView {
         cx.notify();
     }
 
-    /// 刷新搜索框占位符
-    pub fn refresh_placeholders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let lang = self.app.current_language();
-
-        self.search_input.update(cx, |state, cx| {
-            state.set_placeholder(t(I18nKey::SearchBoxPlaceholder, lang), window, cx);
-        });
-    }
-
     fn render_sort_menu(&self, _cx: &mut Context<Self>) -> Option<impl IntoElement> {
         self.sort_menu.as_ref().map(|menu| {
             div()

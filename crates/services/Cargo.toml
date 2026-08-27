@@ -12,9 +12,6 @@ serde_json = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, features = ["json", "stream", "default-tls"] }
-rusqlite = { workspace = true }
-mysql_async = { version = "0.34", features = ["chrono"] }
-mysql_common = "0.32"
 phf = { version = "0.13.1", features = ["macros"] }
 chrono = { workspace = true }
 tokio = { workspace = true }

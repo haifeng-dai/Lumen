@@ -179,8 +179,6 @@ pub struct PdfReaderView {
 
     // ─── 画中画 (PiP) ────────────────────────────────────
     pub(crate) pins: Vec<pip::PiPPin>,
-    #[allow(dead_code)]
-    pub(crate) active_pin_id: Option<String>,
     pub(crate) dragging_pin: Option<pip::PiPDragState>,
     pub(crate) resizing_pin: Option<pip::PiPResizeState>,
     /// Pin 右键菜单：(菜单位置, PopupMenu 实体)

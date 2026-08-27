@@ -1,6 +1,7 @@
 // Windows GUI 应用配置：不显示控制台窗口
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use database::state::LocalStateManager;
 use gpui::{
     App, AppContext, AsyncApp, Bounds, KeyBinding, Point, WindowBounds, WindowOptions, px, size,
 };
@@ -20,7 +21,6 @@ use lumen::{
     ui::views::main_window::{MainWindow, ShowSettings, build_app_menus},
 };
 use models::config::AppConfig;
-use services::state::LocalStateManager;
 use services::{
     app::MainApp,
     config::get_app_root_dir,

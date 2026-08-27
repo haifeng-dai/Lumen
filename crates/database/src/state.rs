@@ -7,11 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
-/// 本地状态管理：负责 `state.db`（UI 状态 / PDF 阅读进度 / AI 对话）。
-///
-/// 原归属 `database` crate，按 database 瘦身（A2-S1）迁移至服务层：
-/// 本结构是“应用状态持久化”服务，属业务层而非存储原语，故收归 `services`。
-/// 底层 SQLite CRUD 仍经由 `database::migration` 提供的迁移 API 完成。
+/// 本地状态数据库：负责 `state.db`（UI 状态 / PDF 阅读进度 / AI 对话）。
+/// 该结构只提供 SQLite 持久化原语，业务编排仍由 services 调用。
 pub struct LocalStateManager {
     db_path: PathBuf,
 }
@@ -56,72 +53,32 @@ impl LocalStateManager {
             [],
         )?;
 
-        // 执行数据库迁移（替代旧的 ad-hoc 列检测循环）
-        database::migration::run_migrations(
-            &conn,
-            &self.db_path,
-            &database::migration::all_migrations(),
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                literature_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                system_prompt TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                compressed_summary TEXT NOT NULL DEFAULT '',
+                active_message_id TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_lit_id
+                ON chat_sessions(literature_id, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                attachments TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                reasoning TEXT,
+                parent_id TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+                ON chat_messages(session_id, created_at ASC);",
         )?;
-
-        // 直接在当前数据库中检查并修改，为 chat_messages 添加 parent_id 字段
-        if database::migration::utils::table_exists(&conn, "chat_messages")? {
-            database::migration::utils::add_column(&conn, "chat_messages", "parent_id", "TEXT")?;
-        }
-
-        // 直接在当前数据库中检查并修改，为 chat_sessions 添加 active_message_id 字段
-        if database::migration::utils::table_exists(&conn, "chat_sessions")? {
-            database::migration::utils::add_column(
-                &conn,
-                "chat_sessions",
-                "active_message_id",
-                "TEXT",
-            )?;
-        }
-
-        // 修复旧数据：为旧的线性对话数据自动串联起 parent_id 链
-        if database::migration::utils::table_exists(&conn, "chat_messages")? {
-            // 找出所有会话列表
-            let mut stmt = conn.prepare("SELECT DISTINCT session_id FROM chat_messages")?;
-            let sessions: Vec<String> = stmt
-                .query_map([], |row| row.get(0))?
-                .filter_map(Result::ok)
-                .collect();
-            drop(stmt);
-
-            for sid in sessions {
-                // 按创建时间升序查出该会话的所有消息
-                let mut stmt = conn.prepare(
-                    "SELECT id, parent_id FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC"
-                )?;
-                let mut msgs: Vec<(String, Option<String>)> = stmt
-                    .query_map(params![sid], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .filter_map(Result::ok)
-                    .collect();
-                drop(stmt);
-
-                let mut prev_id: Option<String> = None;
-                for (id, parent_id) in &mut msgs {
-                    if parent_id.is_none() && prev_id.is_some() {
-                        // 如果当前没有 parent_id，但前面有消息，就串起来
-                        let cur_id: &String = id;
-                        conn.execute(
-                            "UPDATE chat_messages SET parent_id = ?1 WHERE id = ?2",
-                            params![prev_id, cur_id],
-                        )?;
-                        *parent_id = prev_id.clone();
-                    }
-                    prev_id = Some(id.clone());
-                }
-
-                // 顺便把会话的 active_message_id 更新为该会话的最新一条消息的 id
-                if let Some(last_msg_id) = prev_id {
-                    conn.execute(
-                        "UPDATE chat_sessions SET active_message_id = ?1 WHERE id = ?2 AND (active_message_id IS NULL OR active_message_id = '')",
-                        params![last_msg_id, sid],
-                    )?;
-                }
-            }
-        }
 
         Ok(())
     }

@@ -47,15 +47,6 @@ impl ThemeLoader {
         Ok(())
     }
 
-    /// 从字符串内容加载主题方案（如内置主题）。
-    pub fn load_from_string(&mut self, content: &str) -> Result<()> {
-        if let Ok(scheme) = serde_json::from_str::<ThemeScheme>(content) {
-            info!("加载内置主题: {}", scheme.name);
-            self.themes.insert(scheme.name.clone(), scheme);
-        }
-        Ok(())
-    }
-
     /// 按名称取主题方案。
     #[must_use]
     pub fn get_theme(&self, name: &str) -> Option<&ThemeScheme> {

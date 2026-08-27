@@ -1,5 +1,6 @@
 use gpui::{AsyncApp, WeakEntity};
 use i18n::{I18nKey, tf};
+use models::FetchSource;
 
 use super::*;
 

@@ -1,6 +1,6 @@
 use log::info;
 use rusqlite::{Connection, Result, Transaction};
-use std::{fmt, path::Path, path::PathBuf, sync::Mutex};
+use std::{fmt, path::Path, sync::Mutex};
 
 mod annotation;
 mod attachment;
@@ -16,14 +16,11 @@ mod publication;
 mod tag;
 
 mod meta;
-mod migration;
 mod schema;
 /// 数据库管理器
 pub struct Database {
     /// 使用 Mutex 确保 Connection 在多线程环境下是 Sync 的
     conn: Mutex<Connection>,
-    /// 数据库文件路径（用于迁移备份）
-    db_path: PathBuf,
 }
 
 impl fmt::Debug for Database {
@@ -40,10 +37,8 @@ impl Database {
         let conn = Connection::open(&db_path)?;
         let db = Self {
             conn: Mutex::new(conn),
-            db_path,
         };
         db.init_tables()?;
-        db.run_local_migrations()?;
         db.init_default_data()?;
         Ok(db)
     }

@@ -171,11 +171,6 @@ impl CompareDialog {
         }
     }
 
-    pub fn set_error(&mut self, error: String, cx: &mut Context<Self>) {
-        self.error = Some(error);
-        cx.notify();
-    }
-
     fn handle_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         info!("文献对比窗口: 用户点击保存/合并按钮");
         if let Some(new_lit) = &self.new_data {

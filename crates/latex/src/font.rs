@@ -14,8 +14,3 @@ pub const KATEX_FRAKTUR_FONT: &str = "KaTeX_Fraktur";
 pub const KATEX_SCRIPT_FONT: &str = "KaTeX_Script";
 /// 内置粗体字体名称
 pub const KATEX_BOLD_FONT: &str = "KaTeX_Main";
-/// 内置大号算子/定界符字体名称
-pub const KATEX_SIZE1_FONT: &str = "KaTeX_Size1";
-pub const KATEX_SIZE2_FONT: &str = "KaTeX_Size2";
-pub const KATEX_SIZE3_FONT: &str = "KaTeX_Size3";
-pub const KATEX_SIZE4_FONT: &str = "KaTeX_Size4";

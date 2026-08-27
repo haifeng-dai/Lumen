@@ -1,5 +1,5 @@
-/// LaTeX 数学符号与宏命令映射表
-/// 将 LaTeX 命令统一转换为标准 Unicode 数学字符
+//! LaTeX 数学符号与宏命令映射表
+//! 将 LaTeX 命令统一转换为标准 Unicode 数学字符
 
 /// 查询 LaTeX 宏命令对应的 Unicode 字符
 pub fn lookup_symbol(command: &str) -> Option<&'static str> {

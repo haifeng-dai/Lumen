@@ -4,8 +4,7 @@ use chrono::Local;
 use log::{debug, error, info, warn};
 use models::constructors::*;
 use models::{
-    Attachment, Author, DEFAULT_TAG_COLOR, Literature, LiteratureType, Publication,
-    PublicationType, Tag,
+    Attachment, Author, DEFAULT_TAG_COLOR, Literature, LiteratureType, Publication, PublicationType,
 };
 use rusqlite::{Connection, OptionalExtension, Result, Row, params};
 use uuid::Uuid;
@@ -290,39 +289,6 @@ impl Database {
         })
     }
 
-    /// 获取文献的所有标签（包含 Tag 对象）
-    pub fn get_literature_tags(&self, literature_id: &str) -> Result<Vec<models::Tag>> {
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT t.id, t.name, t.color, t.created_at, t.updated_at, t.version, t.is_deleted
-                 FROM tags t
-                 JOIN literature_tags lt ON t.id = lt.tag_id
-                 WHERE lt.literature_id = ?1 AND lt.is_deleted = 0 AND t.is_deleted = 0
-                 ORDER BY t.name ASC",
-            )?;
-
-            let tag_iter = stmt.query_map([literature_id], |row| {
-                Ok(Tag {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    color: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
-                    version: row.get(5)?,
-                    is_deleted: row.get(6)?,
-                    is_dirty: false,
-                })
-            })?;
-
-            let mut tags = Vec::new();
-            for tag in tag_iter {
-                tags.push(tag?);
-            }
-
-            Ok(tags)
-        })
-    }
-
     pub fn get_literature(&self, id: &str) -> Result<Option<Literature>> {
         debug!("数据库: 正在获取文献详情 (ID: {id})");
         self.with_conn(|conn| {
@@ -359,18 +325,6 @@ impl Database {
             let mut literatures = Vec::new();
             for lit in lit_iter { literatures.push(lit?); }
             debug!("数据库: 文件夹 {} 中共有 {} 条文献记录", folder_id, literatures.len());
-            Ok(literatures)
-        })
-    }
-
-    pub fn get_uncategorized_literatures(&self) -> Result<Vec<Literature>> {
-        debug!("数据库: 正在获取未分类文献");
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare("SELECT l.id, l.title, l.year, l.month, l.day, l.type, l.volume, l.issue, l.pages, l.abstract_text, l.doi, l.arxiv_id, l.url, l.rating, l.reading_status, l.is_dirty, l.is_deleted, l.version, l.created_at, l.updated_at, l.publication_id FROM literatures l LEFT JOIN literature_folders lf ON l.id = lf.literature_id AND lf.is_deleted = 0 WHERE lf.literature_id IS NULL AND l.is_deleted = 0 ORDER BY l.created_at DESC")?;
-            let lit_iter = stmt.query_map([], |row| Self::map_literature_row(conn, row))?;
-            let mut literatures = Vec::new();
-            for lit in lit_iter { literatures.push(lit?); }
-            debug!("数据库: 共有 {} 条未分类文献", literatures.len());
             Ok(literatures)
         })
     }

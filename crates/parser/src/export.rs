@@ -106,15 +106,6 @@ impl ExportManager {
         };
         exporter.export_to_string(items, abbreviate_journal)
     }
-
-    #[must_use]
-    pub fn supported_formats(&self) -> Vec<ExportFormat> {
-        vec![
-            ExportFormat::IEEE,
-            ExportFormat::BibTeX,
-            ExportFormat::Elsevier,
-        ]
-    }
 }
 
 impl Default for ExportManager {

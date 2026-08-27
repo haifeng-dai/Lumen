@@ -33,18 +33,6 @@ struct TokenResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ErrorResponse {
-    error: ErrorDetail,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ErrorDetail {
-    message: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct FileListResponse {
     files: Vec<FileResource>,
 }
@@ -194,18 +182,6 @@ impl GoogleDriveBackend {
         self.client
             .get(url)
             .bearer_auth(&token)
-            .send()
-            .await
-            .map_err(|e| anyhow!("请求失败: {e}"))
-    }
-
-    #[allow(dead_code)]
-    async fn send_post(&self, url: &str, body: impl Serialize) -> Result<reqwest::Response> {
-        let token = self.ensure_token().await?;
-        self.client
-            .post(url)
-            .bearer_auth(&token)
-            .json(&body)
             .send()
             .await
             .map_err(|e| anyhow!("请求失败: {e}"))

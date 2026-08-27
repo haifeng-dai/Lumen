@@ -70,12 +70,4 @@ impl MainApp {
             Ok(())
         })
     }
-    pub fn smart_delete_feed_items(&self, id: &str, selected_ids: &HashSet<String>) -> Result<()> {
-        self.op_notify(|| {
-            for aid in Self::resolve_smart_targets(id, selected_ids) {
-                self.feed_service.delete_feed_item(&self.db, &aid)?;
-            }
-            Ok(())
-        })
-    }
 }

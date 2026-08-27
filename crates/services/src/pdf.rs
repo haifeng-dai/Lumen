@@ -204,13 +204,6 @@ impl From<f32> for ZoomLevel {
     }
 }
 
-/// 缓存键设计
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub struct CacheKey {
-    pub page_index: u16,
-    pub zoom_level: ZoomLevel,
-}
-
 /// PDF 的初始状态
 #[derive(Debug, Clone)]
 pub struct PdfInitialState {

@@ -19,7 +19,7 @@ impl PageColorMode {
         match self {
             Self::White => gpui::white(),
             Self::Sepia => gpui::rgb(0xF4ECD8).into(),
-            Self::EyeProtect => gpui::rgb(0xCCE8CF).into(),
+            Self::EyeProtect => gpui::rgb(0xFAF9DE).into(),
         }
     }
 }
@@ -188,24 +188,6 @@ impl ListDelegate for SearchResultsDelegate {
     }
 
     fn cancel(&mut self, _window: &mut Window, _cx: &mut Context<ListState<Self>>) {}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TranslationEngineItem {
-    pub value: String,
-    pub label: String,
-}
-
-impl gpui_component::select::SelectItem for TranslationEngineItem {
-    type Value = String;
-
-    fn title(&self) -> SharedString {
-        self.label.clone().into()
-    }
-
-    fn value(&self) -> &String {
-        &self.value
-    }
 }
 
 // ── 全局 UI 状态（GPUI Global，仅视图层使用） ──────────

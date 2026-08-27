@@ -1,14 +1,13 @@
 use crate::ui::components::LiteratureEditor;
 use crate::ui::dialogs::{FetchDialog, FetchMode};
 use crate::ui::notification::show_notification;
-use crate::ui::views::main_window::types::FetchSource;
 use gpui::prelude::*;
 use gpui::{AppContext, AsyncApp, Window, px, size};
 use gpui_component::{WindowExt, dialog::DialogButtonProps, notification::NotificationType};
 use i18n::{I18nKey, t, tf};
 use log::{debug, error, info};
 use models::constructors::create_literature;
-use models::{Literature, LiteratureType};
+use models::{FetchSource, Literature, LiteratureType};
 use std::sync::Arc;
 use uuid::Uuid;
 

@@ -99,34 +99,6 @@ impl Database {
         })
     }
 
-    /// 获取所有有效标签
-    pub fn get_all_tags(&self) -> Result<Vec<Tag>> {
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, name, color, created_at, updated_at, version, is_deleted
-                 FROM tags WHERE is_deleted = 0 ORDER BY name ASC",
-            )?;
-            let iter = stmt.query_map([], |row| {
-                Ok(Tag {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    color: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
-                    version: row.get(5)?,
-                    is_deleted: row.get(6)?,
-                    is_dirty: false, // 读取时不关心 dirty 状态
-                })
-            })?;
-
-            let mut tags = Vec::new();
-            for t in iter {
-                tags.push(t?);
-            }
-            Ok(tags)
-        })
-    }
-
     /// 获取标签详情 (Internal Helper)
     fn get_tag_by_id_conn(conn: &Connection, id: &str) -> Result<Tag> {
         conn.query_row(
@@ -253,15 +225,6 @@ impl Database {
 
             Ok(())
         })
-    }
-
-    /// 合并标签 (API Wrapper)
-    pub fn merge_tags(&self, source_id: &str, target_id: &str) -> Result<()> {
-        if source_id == target_id {
-            return Ok(());
-        }
-        info!("数据库: 准备合并标签 (Source: {source_id} -> Target: {target_id})");
-        self.with_transaction(|tx| self.merge_tags_internal(tx, source_id, target_id))
     }
 
     // --- Internal Helpers ---

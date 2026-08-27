@@ -1,4 +1,4 @@
-use super::{FetchSource, MainWindow};
+use super::MainWindow;
 
 use super::types::BatchSource;
 use crate::ui::notification::show_notification;

@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use log::{debug, error, warn};
+use models::chat::ChatResponseChunk;
 use reqwest::Client;
 use serde_json::Value;
 use std::future::Future;

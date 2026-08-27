@@ -129,19 +129,6 @@ impl Database {
         })
     }
 
-    /// 仅触发 literatures.version+1 通知 DataStore 刷新
-    pub fn bump_literature_version(&self, literature_id: &str) -> Result<()> {
-        let now = chrono::Utc::now().timestamp();
-        self.with_conn(|conn| {
-            conn.execute(
-                "UPDATE literatures SET version = version + 1, updated_at = ?1, is_dirty = 1
-                 WHERE id = ?2",
-                params![now, literature_id],
-            )?;
-            Ok(())
-        })
-    }
-
     pub fn get_dirty_notes(&self) -> Result<Vec<LiteratureNote>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(

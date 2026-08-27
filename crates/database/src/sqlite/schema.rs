@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::debug;
 use rusqlite::{Result, params};
 
 use super::Database;
@@ -301,17 +301,6 @@ impl Database {
                 )",
                 [],
             )?;
-
-            // 执行数据库迁移
-            crate::migration::run_migrations(
-                conn,
-                &self.db_path,
-                &crate::migration::all_migrations(),
-            )
-            .map_err(|e| {
-                error!("数据库迁移失败: {e}");
-                rusqlite::Error::ExecuteReturnedResults
-            })?;
 
             Ok(())
         })

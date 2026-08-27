@@ -13,7 +13,7 @@ use std::{env, fs};
 use anyhow::Context;
 use log::debug;
 
-use crate::state::LocalStateManager;
+use database::state::LocalStateManager;
 use models::config::{
     AppConfig, CitationConfig, DatabaseConfig, GoogleDriveConfig, PdfViewerConfig, ProxyConfig,
     TranslationConfig, UiConfig, WebDavConfig,

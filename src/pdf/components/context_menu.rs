@@ -156,11 +156,26 @@ impl PdfReaderView {
             let aid_note = ann_id_build.clone();
             let has_note_val = has_note;
             let from_sidebar_val = from_sidebar;
+            let note_label: SharedString = if has_note_val {
+                i18n::t(I18nKey::ViewNote, lang)
+            } else {
+                i18n::t(I18nKey::AddNote, lang)
+            }
+            .into();
             menu = menu.item(
-                PopupMenuItem::new(if has_note_val {
-                    i18n::t(I18nKey::ViewNote, lang)
-                } else {
-                    i18n::t(I18nKey::AddNote, lang)
+                PopupMenuItem::element(move |_window, cx| {
+                    let accent_bg = cx.theme().tokens.accent;
+                    let accent_fg = cx.theme().tokens.accent_foreground;
+                    h_flex()
+                        .w_full()
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .justify_center()
+                        .items_center()
+                        .hover(move |s| s.bg(accent_bg).text_color(accent_fg))
+                        .child(div().child(note_label.clone()))
                 })
                 .on_click(move |_, window, cx| {
                     if let Some(this) = weak_note.upgrade() {
@@ -267,9 +282,18 @@ impl PdfReaderView {
             let delete_label: SharedString = i18n::t(I18nKey::Delete, lang).into();
             menu = menu.item(
                 PopupMenuItem::element(move |_window, cx| {
-                    div()
-                        .text_color(cx.theme().danger)
-                        .child(delete_label.clone())
+                    let danger = cx.theme().danger;
+                    h_flex()
+                        .w_full()
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .justify_center()
+                        .items_center()
+                        .text_color(danger)
+                        .hover(move |s| s.bg(danger.opacity(0.12)))
+                        .child(div().child(delete_label.clone()))
                 })
                 .on_click(move |_, _window, cx| {
                     if let Some(this) = weak_delete.upgrade() {

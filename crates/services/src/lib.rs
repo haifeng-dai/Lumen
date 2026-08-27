@@ -17,7 +17,6 @@ pub mod notify;
 pub mod pdf;
 pub mod query;
 pub mod runtime;
-pub mod state;
 pub mod sync;
 pub mod theme;
 pub mod utils;

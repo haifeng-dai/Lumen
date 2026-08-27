@@ -9,7 +9,6 @@ use gpui_component::{
     menu::{PopupMenu, PopupMenuItem},
 };
 use i18n::I18nKey;
-use log::debug;
 use std::sync::Arc;
 
 /// 画中画图钉
@@ -226,53 +225,6 @@ impl super::super::PdfReaderView {
                 .children(elements)
                 .into_any_element(),
         )
-    }
-
-    /// 为所有 Pin 更新尺寸并发送渲染请求（缩放/底色变化后调用）
-    #[allow(dead_code)]
-    pub(crate) fn rerender_all_pins(&mut self) {
-        if self.pins.is_empty() {
-            return;
-        }
-        let rem_size = self.last_rem_size;
-        debug!(
-            "pip: 重新渲染全部 {} 个 Pin (zoom={})",
-            self.pins.len(),
-            self.zoom_level
-        );
-
-        for pin in &mut self.pins {
-            let (pdf_w, pdf_h) = self
-                .page_sizes
-                .get(pin.page as usize)
-                .copied()
-                .unwrap_or((612.0, 792.0));
-            let display_w = crate::pdf::PAGE_BASE_WIDTH_REMS * self.zoom_level * rem_size;
-            let display_h = display_w * (pdf_h / pdf_w);
-
-            let (bx0, by0, bx1, by1) = pin.bbox;
-            let bbox_w = bx1 - bx0;
-            let bbox_h = by1 - by0;
-            let pdf_pw = pdf_w.max(1.0);
-            let new_w = bbox_w / pdf_pw * display_w;
-            let new_h = bbox_h / pdf_h * display_h;
-
-            pin.size = Size {
-                width: px(new_w),
-                height: px(new_h),
-            };
-
-            let page = pin.page;
-            let pin_id = pin.id.clone();
-            let bbox = pin.bbox;
-            let current_w = new_w;
-            // 分辨率基于当前 CSS 尺寸，独立于 PDF zoom
-            let scale = current_w * self.window_scale_factor * 1.2 / bbox_w.max(1.0);
-            pin.rendered_scale = scale;
-            pin.pending_scale = scale;
-            pin.render_pending = true;
-            self.pdf_service.send_render_pin(page, pin_id, bbox, scale);
-        }
     }
 
     /// 构建 Pin 右键菜单（返回 PopupMenu 实体）。

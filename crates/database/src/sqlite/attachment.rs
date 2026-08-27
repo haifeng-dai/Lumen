@@ -101,39 +101,6 @@ impl Database {
         })
     }
 
-    /// 获取特定文献下的所有附件
-    pub fn get_attachments_for_literature(&self, literature_id: &str) -> Result<Vec<Attachment>> {
-        debug!("数据库: 正在获取文献 (ID: {literature_id}) 的所有附件");
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare("SELECT id, literature_id, file_path, file_name, file_size, mime_type, etag, hash, is_main, is_dirty, is_deleted, version, created_at, updated_at FROM attachments WHERE literature_id = ?1 AND is_deleted = 0 ORDER BY is_main DESC, created_at ASC")?;
-            let att_iter = stmt.query_map([literature_id], |row| {
-                Ok(Attachment {
-                    id: row.get(0)?,
-                    literature_id: row.get(1)?,
-                    file_path: row.get(2)?,
-                    file_name: row.get(3)?,
-                    file_size: row.get::<_, i64>(4)? as u64,
-                    mime_type: row.get(5)?,
-                    etag: row.get(6)?,
-                    hash: row.get(7)?,
-                    is_main: row.get(8)?,
-                    is_dirty: row.get(9)?,
-                    is_deleted: row.get(10)?,
-                    version: row.get(11)?,
-                    created_at: row.get(12)?,
-                    updated_at: row.get(13)?,
-                })
-            })?;
-
-            let mut attachments = Vec::new();
-            for att in att_iter {
-                attachments.push(att?);
-            }
-            debug!("数据库: 成功获取文献 {} 的 {} 个附件", literature_id, attachments.len());
-            Ok(attachments)
-        })
-    }
-
     /// 获取所有附件（包含已删除的），用于同步扫描
     pub fn get_all_attachments_include_deleted(&self) -> Result<Vec<Attachment>> {
         debug!("数据库: 正在获取所有附件（含已删除）");

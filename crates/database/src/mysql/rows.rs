@@ -1,8 +1,8 @@
 use anyhow::Result;
 use models::constructors::*;
 use models::{
-    Attachment, Author, Citation, Feed, FeedItem, FeedType, Folder, FolderType, Literature,
-    LiteratureType, Publication, PublicationType, Tag,
+    Attachment, Author, Feed, FeedItem, FeedType, Folder, FolderType, Literature, LiteratureType,
+    Publication, PublicationType, Tag,
 };
 use mysql_common::value::Value;
 
@@ -46,37 +46,6 @@ fn value_to_ts(v: Value) -> Option<i64> {
             str_to_ts(&s)
         }
         _ => None,
-    }
-}
-
-pub struct CitationRow {
-    pub source_id: Option<String>,
-    pub target_id: Option<String>,
-    pub is_deleted: Option<bool>,
-    pub version: Option<i64>,
-    pub updated_at: Option<i64>,
-}
-
-impl CitationRow {
-    pub fn from_mysql_row(row: mysql_async::Row) -> Result<Self> {
-        Ok(Self {
-            source_id: row.get::<Option<String>, _>("source_id").flatten(),
-            target_id: row.get::<Option<String>, _>("target_id").flatten(),
-            is_deleted: row.get::<Option<bool>, _>("is_deleted").flatten(),
-            version: row.get::<Option<i64>, _>("version").flatten(),
-            updated_at: row.get::<Option<i64>, _>("updated_at").flatten(),
-        })
-    }
-
-    #[must_use]
-    pub fn into_model(self) -> Citation {
-        Citation {
-            source_id: self.source_id.unwrap_or_default(),
-            target_id: self.target_id.unwrap_or_default(),
-            is_deleted: self.is_deleted.unwrap_or(false),
-            version: self.version.unwrap_or(1),
-            updated_at: self.updated_at.unwrap_or(0),
-        }
     }
 }
 

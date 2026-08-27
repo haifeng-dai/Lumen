@@ -1,22 +1,9 @@
-use log::{debug, error, info};
+use log::{debug, info};
 use rusqlite::Result;
 
 use super::Database;
 
 impl Database {
-    pub fn clear_all(&self) -> Result<()> {
-        info!("数据库: 正在清空本地数据库所有表数据...");
-        let tables = self.get_table_names();
-        self.with_conn(|conn| {
-            for table in &tables {
-                match conn.execute(&format!("DELETE FROM {table}"), []) {
-                    Ok(count) => info!("数据库: 表 '{table}' 已清空 (物理删除 {count} 条记录)"),
-                    Err(e) => error!("数据库: 清空表 '{table}' 失败: {e}"),
-                }
-            }
-            Ok(())
-        })
-    }
     fn drop_all_tables(&self) -> Result<()> {
         info!("警告: 正在删除数据库所有表!");
         let tables = self.get_table_names();

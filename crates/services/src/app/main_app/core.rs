@@ -18,7 +18,7 @@ impl MainApp {
     #[must_use]
     pub fn new(
         config: AppConfig,
-        local_state_manager: Arc<crate::state::LocalStateManager>,
+        local_state_manager: Arc<database::state::LocalStateManager>,
         initial_state: models::local_state::AppUiState,
     ) -> (Self, tokio::sync::mpsc::Receiver<()>) {
         info!("开始创建 MainApp 实例...");
@@ -223,26 +223,7 @@ impl MainApp {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn test_google_drive_config(
-        &self,
-        client_id: String,
-        client_secret: String,
-        refresh_token: String,
-    ) -> Result<(), String> {
-        let config_json = serde_json::to_string(&file::GoogleDriveConfig {
-            enabled: true,
-            client_id,
-            client_secret,
-            refresh_token,
-        })
-        .map_err(|e| e.to_string())?;
-        self.sync_service
-            .test_backend_config("google_drive", &config_json)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    pub async fn test_mysql_config(&self, config: database::DatabaseConfig) -> Result<(), String> {
+    pub async fn test_mysql_config(&self, config: models::DatabaseConfig) -> Result<(), String> {
         self.sync_service
             .test_mysql_config(config)
             .await

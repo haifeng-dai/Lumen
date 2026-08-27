@@ -121,10 +121,6 @@ impl super::PdfReaderView {
         &self.document_id
     }
 
-    pub fn set_notes_cache(&mut self, notes: Vec<models::LiteratureNote>) {
-        self.notes_cache = notes;
-    }
-
     pub fn reload_notes(&mut self, cx: &mut Context<Self>) {
         if let Some(delegate) = &self.delegate {
             let lit_id = self

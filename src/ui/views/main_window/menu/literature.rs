@@ -9,12 +9,13 @@ use gpui_component::{
     menu::{PopupMenu, PopupMenuItem},
 };
 use i18n::{I18nKey, Language, t};
+use models::FetchSource;
 use parser::export::ExportFormat;
 use std::sync::Arc;
 
 use super::{
-    BatchSource, FetchSource, FolderSelectClosure, LiteraturePrefetch, build_folder_level,
-    copy_citation, danger_menu_item,
+    BatchSource, FolderSelectClosure, LiteraturePrefetch, build_folder_level, copy_citation,
+    danger_menu_item,
 };
 
 #[allow(clippy::too_many_arguments)]

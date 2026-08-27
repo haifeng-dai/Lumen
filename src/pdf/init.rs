@@ -248,7 +248,6 @@ impl super::PdfReaderView {
             chat_session_view: None,
 
             pins: Vec::new(),
-            active_pin_id: None,
             dragging_pin: None,
             resizing_pin: None,
             pin_context_menu: None,

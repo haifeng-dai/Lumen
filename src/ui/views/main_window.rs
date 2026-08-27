@@ -30,7 +30,7 @@ pub(crate) use actions::AppPdfDelegate;
 pub use menu::ContextMenuType;
 pub use menus::build_app_menus;
 pub(crate) use types::BatchSource;
-pub use types::{FetchSource, ViewEvent};
+pub use types::ViewEvent;
 
 const SIDEBAR_MIN_RATIO: f32 = 0.10;
 const SIDEBAR_MAX_RATIO: f32 = 0.35;

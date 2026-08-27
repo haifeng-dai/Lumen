@@ -47,106 +47,12 @@ pub async fn ensure_remote_tables(conn: &mut mysql_async::Conn) -> Result<()> {
         }
     }
 
-    // 一次性迁移：把历史库中 created_at 文本列转换为 BIGINT（Unix 秒）。
-    // 顺序关键——先转数据再改列类型，否则会被截断损坏。
-    run_remote_migrations(conn).await?;
-
     Ok(())
 }
 
 /// 迁移历史远程库中仍为文本的 `created_at`/`updated_at` 列 -> BIGINT（Unix 秒）。
 ///
 /// 关键设计（与本地迁移一致）：**逐列检查 information_schema 的真实列类型**，
-/// 只对仍为文本的列做转换，绝不依赖 `_migrations` 版本号。历史上曾写过
-/// `version=1` 但列仍是 TEXT（漏改/被跳过），用版本号判断会"假成功跳过"，
-/// 留下 `publications.created_at` 这类遗漏列。
-async fn run_remote_migrations(conn: &mut mysql_async::Conn) -> Result<()> {
-    // 覆盖所有含 created_at/updated_at 的表（含 publications）。已是 BIGINT 的列
-    // 经下面真实类型检查会被跳过，故这里多列无害，反而能兜住任何历史 TEXT 列。
-    let pairs: &[(&str, &str)] = &[
-        ("literatures", "created_at"),
-        ("literatures", "updated_at"),
-        ("publications", "created_at"),
-        ("publications", "updated_at"),
-        ("authors", "created_at"),
-        ("authors", "updated_at"),
-        ("folders", "created_at"),
-        ("folders", "updated_at"),
-        ("tags", "created_at"),
-        ("tags", "updated_at"),
-        ("attachments", "created_at"),
-        ("attachments", "updated_at"),
-        ("feeds", "created_at"),
-        ("feeds", "updated_at"),
-        ("feed_items", "updated_at"),
-        ("annotations", "created_at"),
-        ("annotations", "updated_at"),
-        ("literature_notes", "created_at"),
-        ("literature_notes", "updated_at"),
-        ("literature_authors", "updated_at"),
-        ("literature_folders", "updated_at"),
-        ("literature_tags", "updated_at"),
-        ("literature_citations", "updated_at"),
-    ];
-
-    let mut converted = 0u32;
-    for (table, col) in pairs {
-        // 查询真实列类型；列不存在时 DATA_TYPE 为 NULL，跳过。
-        let data_type: Option<String> = conn
-            .exec_first(
-                "SELECT DATA_TYPE FROM information_schema.columns \
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
-                (table, col),
-            )
-            .await?;
-        let is_text = match data_type {
-            Some(d) => {
-                let d = d.to_ascii_lowercase();
-                d == "text" || d == "varchar" || d == "char" || d == "datetime" || d == "timestamp"
-            }
-            None => false,
-        };
-        if !is_text {
-            continue; // 已是 BIGINT 或列不存在，无需处理
-        }
-
-        // 转数据：datetime 串 -> UNIX_TIMESTAMP；纯数字串 -> 其值；NULL/空/其余 -> 0。
-        // 不设 WHERE，确保 NULL 与 '' 也落入 CASE 的 ELSE 分支置 0，避免后续 MODIFY NOT NULL 失败。
-        let upd = format!(
-            "UPDATE {table} SET {col} = CASE \
-                WHEN {col} REGEXP '^[0-9]{{4}}-' THEN UNIX_TIMESTAMP({col}) \
-                WHEN {col} REGEXP '^[0-9]+$' THEN CAST({col} AS UNSIGNED) \
-                ELSE 0 END"
-        );
-        if let Err(e) = conn.query_drop(&upd).await {
-            error!("MySQL 迁移数据转换失败(表 {table}.{col}): {e}");
-        }
-        // 再改列类型为 BIGINT
-        let alt = format!("ALTER TABLE {table} MODIFY {col} BIGINT NOT NULL DEFAULT 0");
-        if let Err(e) = conn.query_drop(&alt).await {
-            error!("MySQL 迁移列类型修改失败(表 {table}.{col}): {e}");
-        } else {
-            converted += 1;
-            info!("MySQL: 已迁移 {table}.{col} -> BIGINT");
-        }
-    }
-
-    // 仅作已运行标记；不再作为是否执行的依据（避免脏标记导致跳过）。
-    let _ = conn
-        .query_drop(
-            "CREATE TABLE IF NOT EXISTS _migrations (version INT PRIMARY KEY, applied_at DATETIME)",
-        )
-        .await;
-    let _ = conn
-        .exec_drop(
-            "INSERT INTO _migrations (version, applied_at) VALUES (1, NOW()) ON DUPLICATE KEY UPDATE applied_at = NOW()",
-            (),
-        )
-        .await;
-    info!("MySQL: 时间戳列迁移完成（按真实列类型逐列检查，本次转换 {converted} 列）");
-    Ok(())
-}
-
 pub async fn clear_all_data(manager: &MySqlManager) -> Result<()> {
     let (use_remote, host, db_name) = {
         let c = manager.config.read().unwrap();

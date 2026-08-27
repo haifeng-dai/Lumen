@@ -66,9 +66,10 @@ impl SQLSyncService {
     pub fn update_config(&self, config: &AppConfig) {
         info!("存储管理: [SQL] 正在更新同步配置...");
         let old_path = self.attachment_dir.read().map(|r| r.clone()).ok();
-        if let Some(pool) = self.mysql.update_config(config.database.clone()) {
+        if self.mysql.update_config(config.database.clone()) {
+            let mysql = self.mysql.clone();
             RUNTIME.spawn(async move {
-                if let Err(e) = pool.disconnect().await {
+                if let Err(e) = mysql.disconnect_retired_pools().await {
                     error!("MySQL: 断开旧连接池失败: {e}");
                 }
             });
@@ -162,10 +163,11 @@ impl SQLSyncService {
                     // 网络类错误：丢弃可能残留死连接的旧连接池，下次同步重建，
                     // 避免切换网络后一直复用已断开的 TCP 连接。
                     if kind == crate::sync::error::SyncErrorKind::Network
-                        && let Some(old) = mysql_for_reset.update_config(cfg)
+                        && mysql_for_reset.reset_pool()
                     {
+                        let mysql = mysql_for_reset.clone();
                         RUNTIME.spawn(async move {
-                            if let Err(e) = old.disconnect().await {
+                            if let Err(e) = mysql.disconnect_retired_pools().await {
                                 error!("MySQL: 断开旧连接池失败: {e}");
                             }
                         });
@@ -185,7 +187,7 @@ impl SQLSyncService {
         })
     }
 
-    pub async fn test_mysql_config(&self, config: database::DatabaseConfig) -> anyhow::Result<()> {
+    pub async fn test_mysql_config(&self, config: models::DatabaseConfig) -> anyhow::Result<()> {
         let host = config.host.clone();
         debug!("存储管理: 正在测试 MySQL 连接配置 (Host: {host})");
         let handle =
