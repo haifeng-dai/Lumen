@@ -7,9 +7,97 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 
 use crate::pdf::{
-    Annotation, AnnotationColor, AnnotationKind, LinkInfo, LinkPageData, OutlineItem, TextChar,
-    TextPageData,
+    Annotation, AnnotationColor, AnnotationKind, LinkInfo, LinkPageData, LinkTarget, OutlineItem,
+    TextChar, TextPageData,
 };
+
+fn destination_top(kind: &mupdf::DestinationKind) -> Option<f32> {
+    match kind {
+        mupdf::DestinationKind::XYZ { top, .. }
+        | mupdf::DestinationKind::FitH { top }
+        | mupdf::DestinationKind::FitBH { top } => *top,
+        mupdf::DestinationKind::FitR { top, .. } => Some(*top),
+        mupdf::DestinationKind::Fit
+        | mupdf::DestinationKind::FitV { .. }
+        | mupdf::DestinationKind::FitBV { .. }
+        | mupdf::DestinationKind::FitB => None,
+    }
+}
+
+fn normalized_destination_y(top: f32, y0: f32, y1: f32) -> Option<f32> {
+    if !top.is_finite() || !y0.is_finite() || !y1.is_finite() || y1 <= y0 {
+        return None;
+    }
+    Some(((top - y0) / (y1 - y0)).clamp(0.0, 1.0))
+}
+
+#[cfg(test)]
+mod destination_tests {
+    use super::{destination_top, normalized_destination_y};
+
+    #[test]
+    fn extracts_vertical_coordinate_for_supported_kinds() {
+        assert_eq!(
+            destination_top(&mupdf::DestinationKind::XYZ {
+                left: None,
+                top: Some(25.0),
+                zoom: None,
+            }),
+            Some(25.0)
+        );
+        assert_eq!(
+            destination_top(&mupdf::DestinationKind::FitH { top: Some(10.0) }),
+            Some(10.0)
+        );
+        assert_eq!(
+            destination_top(&mupdf::DestinationKind::FitBH { top: Some(5.0) }),
+            Some(5.0)
+        );
+        assert_eq!(
+            destination_top(&mupdf::DestinationKind::FitR {
+                left: 0.0,
+                bottom: 0.0,
+                right: 10.0,
+                top: 50.0,
+            }),
+            Some(50.0)
+        );
+    }
+
+    #[test]
+    fn unsupported_destination_kinds_use_page_start() {
+        for kind in [
+            mupdf::DestinationKind::Fit,
+            mupdf::DestinationKind::FitB,
+            mupdf::DestinationKind::FitV { left: Some(1.0) },
+            mupdf::DestinationKind::FitBV { left: Some(1.0) },
+        ] {
+            assert_eq!(destination_top(&kind), None);
+        }
+    }
+
+    #[test]
+    fn normalizes_and_clamps_coordinates_safely() {
+        assert_eq!(normalized_destination_y(50.0, 0.0, 100.0), Some(0.5));
+        assert_eq!(normalized_destination_y(-10.0, 0.0, 100.0), Some(0.0));
+        assert_eq!(normalized_destination_y(110.0, 0.0, 100.0), Some(1.0));
+        assert_eq!(normalized_destination_y(1.0, 10.0, 10.0), None);
+        assert_eq!(normalized_destination_y(f32::NAN, 0.0, 1.0), None);
+    }
+
+    #[test]
+    fn external_links_keep_their_url() {
+        let target = crate::pdf::LinkTarget::External {
+            url: "https://example.com".to_string(),
+        };
+        assert_eq!(
+            target,
+            crate::pdf::LinkTarget::External {
+                url: "https://example.com".to_string()
+            }
+        );
+    }
+}
 
 // ─── Worker Messages ─────────────────────────────────────────
 
@@ -841,6 +929,7 @@ fn start_global_worker(queue: Arc<PdfTaskQueue>) {
                         let scale = (display_w / page_width + display_h / page_height) / 2.0;
 
                         let mut links_data = Vec::new();
+                        let mut destination_bounds = HashMap::new();
                         if let Ok(links_iter) = pdf_page.links() {
                             for link in links_iter {
                                 let rect = link.bounds;
@@ -849,12 +938,59 @@ fn start_global_worker(queue: Arc<PdfTaskQueue>) {
                                 let right = rect.x1 * scale;
                                 let bottom = rect.y1 * scale;
 
+                                let target = match link.dest {
+                                    Some(dest) => {
+                                        let page_number = dest.loc.page_number;
+                                        match u16::try_from(page_number) {
+                                            Ok(target_page) => {
+                                                let normalized_y = match destination_top(&dest.kind)
+                                                {
+                                                    Some(top) => {
+                                                        let bounds = destination_bounds
+                                                            .entry(target_page)
+                                                            .or_insert_with(|| {
+                                                                document
+                                                                    .load_page(target_page as i32)
+                                                                    .and_then(|page| page.bounds())
+                                                            });
+                                                        match bounds {
+                                                            Ok(bounds) => normalized_destination_y(
+                                                                top, bounds.y0, bounds.y1,
+                                                            ),
+                                                            Err(error) => {
+                                                                debug!(
+                                                                    "PDF Worker: 无法读取内部链接目标页 {} bounds，降级到页首: {:?}",
+                                                                    target_page, error
+                                                                );
+                                                                None
+                                                            }
+                                                        }
+                                                    }
+                                                    None => None,
+                                                };
+                                                LinkTarget::Internal {
+                                                    page: target_page,
+                                                    normalized_y,
+                                                }
+                                            }
+                                            Err(_) => {
+                                                debug!(
+                                                    "PDF Worker: 内部链接目标页 {} 超出 u16，降级为外部 URL",
+                                                    page_number
+                                                );
+                                                LinkTarget::External { url: link.uri }
+                                            }
+                                        }
+                                    }
+                                    None => LinkTarget::External { url: link.uri },
+                                };
+
                                 links_data.push(LinkInfo {
                                     left,
                                     top,
                                     right,
                                     bottom,
-                                    url: link.uri,
+                                    target,
                                 });
                             }
                         }

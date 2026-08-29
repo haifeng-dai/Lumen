@@ -168,7 +168,21 @@ pub struct LinkInfo {
     pub top: f32,
     pub right: f32,
     pub bottom: f32,
-    pub url: String,
+    pub target: LinkTarget,
+}
+
+/// PDF 链接的目标类型。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LinkTarget {
+    External {
+        url: String,
+    },
+    Internal {
+        /// 零基目标页码。
+        page: u16,
+        /// 从目标页顶部开始的归一化位置。
+        normalized_y: Option<f32>,
+    },
 }
 
 /// 页面的所有链接数据

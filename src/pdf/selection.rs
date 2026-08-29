@@ -5,7 +5,15 @@ use super::{
 use chrono::Utc;
 use gpui::{Context, MouseMoveEvent, Pixels, Point, Size, Window, px};
 use log::debug;
+use services::pdf::LinkTarget;
 use uuid::Uuid;
+
+fn internal_link_offset(normalized_y: Option<f32>, display_h: f32) -> f32 {
+    normalized_y
+        .filter(|value| value.is_finite())
+        .map(|value| display_h * value.clamp(0.0, 1.0))
+        .unwrap_or(0.0)
+}
 
 impl PdfReaderView {
     pub(crate) fn handle_root_mouse_move(
@@ -578,7 +586,7 @@ impl PdfReaderView {
                 if let Some((page_index, px_x, px_y)) =
                     self.content_to_page_coords(pos.x, pos.y, window)
                 {
-                    if let Some(url) =
+                    if let Some(target) =
                         self.hit_test_link(page_index, f32::from(px_x), f32::from(px_y))
                     {
                         self.annotation_state.selected_id = None;
@@ -587,8 +595,15 @@ impl PdfReaderView {
                         self.selected_text = None;
                         self.is_mouse_down = false;
                         self.mouse_down_pos = None;
-                        if let Some(delegate) = &self.delegate {
-                            delegate.on_link_click(url);
+                        match target {
+                            LinkTarget::External { url } => {
+                                if let Some(delegate) = &self.delegate {
+                                    delegate.on_link_click(url);
+                                }
+                            }
+                            LinkTarget::Internal { page, normalized_y } => {
+                                self.scroll_to_internal_link(page, normalized_y, window, cx);
+                            }
                         }
                         cx.notify();
                         return;
@@ -1172,18 +1187,41 @@ impl PdfReaderView {
         None
     }
 
-    pub(crate) fn hit_test_link(&mut self, page_index: u16, x: f32, y: f32) -> Option<String> {
+    pub(crate) fn hit_test_link(&mut self, page_index: u16, x: f32, y: f32) -> Option<LinkTarget> {
         let link_data = self
             .page_link_data
             .get(page_index as usize)
             .and_then(|d| d.as_ref())?;
         for link in &link_data.links {
             if x >= link.left && x <= link.right && y >= link.top && y <= link.bottom {
-                return Some(link.url.clone());
+                return Some(link.target.clone());
             }
         }
         None
     }
+
+    fn scroll_to_internal_link(
+        &mut self,
+        page: u16,
+        normalized_y: Option<f32>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        if page as usize >= self.total_pages {
+            debug!(
+                "PDF 内部链接目标页越界: page={}, total_pages={}",
+                page, self.total_pages
+            );
+            return;
+        }
+
+        let rem_size = f32::from(window.rem_size());
+        let (_, display_h) =
+            helpers::page_display_size(&self.page_sizes, page as usize, self.zoom_level, rem_size);
+        let offset = px(internal_link_offset(normalized_y, display_h));
+        self.scroll_to_page(page, offset, cx);
+    }
+
     pub(crate) fn hit_test_annotation(
         &mut self,
         page_index: u16,
@@ -1425,5 +1463,21 @@ impl PdfReaderView {
             render_pending: true,
         };
         self.pins.push(pin);
+    }
+}
+
+#[cfg(test)]
+mod internal_link_tests {
+    use super::internal_link_offset;
+
+    #[test]
+    fn converts_page_relative_positions() {
+        assert_eq!(internal_link_offset(None, 800.0), 0.0);
+        assert_eq!(internal_link_offset(Some(0.0), 800.0), 0.0);
+        assert_eq!(internal_link_offset(Some(0.5), 800.0), 400.0);
+        assert_eq!(internal_link_offset(Some(1.0), 800.0), 800.0);
+        assert_eq!(internal_link_offset(Some(-1.0), 800.0), 0.0);
+        assert_eq!(internal_link_offset(Some(2.0), 800.0), 800.0);
+        assert_eq!(internal_link_offset(Some(f32::NAN), 800.0), 0.0);
     }
 }
