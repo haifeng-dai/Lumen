@@ -12,7 +12,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, features = ["json", "stream", "default-tls"] }
-phf = { version = "0.13.1", features = ["macros"] }
+phf = { version = "0.14", features = ["macros"] }
 chrono = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }

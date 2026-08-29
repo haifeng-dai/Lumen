@@ -772,7 +772,8 @@ fn compute_file_hash(path: &std::path::Path) -> std::io::Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    let result = hasher.finalize();
+    Ok(result.iter().map(|b| format!("{:02x}", b)).collect())
 }
 
 #[cfg(test)]

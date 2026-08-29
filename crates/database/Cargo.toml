@@ -8,8 +8,8 @@ models = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 log = { workspace = true }
-mysql_async = { version = "0.34", features = ["chrono"] }
-mysql_common = "0.32"
+mysql_async = { version = "0.37", features = ["chrono"] }
+mysql_common = "0.37"
 rusqlite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

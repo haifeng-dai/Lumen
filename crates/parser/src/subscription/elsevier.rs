@@ -58,7 +58,7 @@ impl ElsevierSubscriptionParser {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_string();
                     if name == "item" {
                         in_item = true;
                         title.clear();
@@ -71,7 +71,7 @@ impl ElsevierSubscriptionParser {
                     current_tag = name;
                 }
                 Ok(Event::Text(ref e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                    let text = e.as_ref().to_string();
                     apply_field_text(
                         &text,
                         current_tag.as_str(),
@@ -84,7 +84,7 @@ impl ElsevierSubscriptionParser {
                     );
                 }
                 Ok(Event::CData(ref e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                    let text = e.as_ref().to_string();
                     apply_field_text(
                         &text,
                         current_tag.as_str(),
@@ -97,7 +97,7 @@ impl ElsevierSubscriptionParser {
                     );
                 }
                 Ok(Event::End(ref e)) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_string();
                     if name == "item" {
                         in_item = false;
 

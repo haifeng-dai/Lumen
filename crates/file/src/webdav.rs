@@ -284,26 +284,21 @@ impl AttachmentBackend for WebDavBackend {
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
-                        b"href" => in_href = true,
-                        b"getetag" => in_etag = true,
+                        "href" => in_href = true,
+                        "getetag" => in_etag = true,
                         _ => {}
                     },
                     Ok(Event::Text(ref e)) => {
                         if in_href {
-                            current_href = reader.decoder().decode(e.as_ref())?.into_owned();
+                            current_href = e.as_ref().to_string();
                         } else if in_etag {
-                            current_etag = reader
-                                .decoder()
-                                .decode(e.as_ref())?
-                                .into_owned()
-                                .trim_matches('"')
-                                .to_string();
+                            current_etag = e.as_ref().trim_matches('"').to_string();
                         }
                     }
                     Ok(Event::End(ref e)) => match e.local_name().as_ref() {
-                        b"href" => in_href = false,
-                        b"getetag" => in_etag = false,
-                        b"response" => {
+                        "href" => in_href = false,
+                        "getetag" => in_etag = false,
+                        "response" => {
                             if !current_href.is_empty()
                                 && !current_etag.is_empty()
                                 && let Some(filename) = current_href.split('/').next_back()

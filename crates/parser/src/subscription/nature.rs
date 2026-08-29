@@ -66,7 +66,7 @@ impl NatureSubscriptionParser {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_string();
                     if name == "item" {
                         in_item = true;
                         // 重置字段
@@ -86,7 +86,7 @@ impl NatureSubscriptionParser {
                 // Nature 的 title / content:encoded / dc:title 均以 CDATA 包裹，
                 // 因此 Text 与 CData 两个事件都要处理（quick_xml 0.39 对 CDATA 发独立事件）。
                 Ok(Event::Text(ref e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                    let text = e.as_ref().to_string();
                     apply_nature_field_text(
                         &text,
                         current_tag.as_str(),
@@ -105,7 +105,7 @@ impl NatureSubscriptionParser {
                     );
                 }
                 Ok(Event::CData(ref e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                    let text = e.as_ref().to_string();
                     apply_nature_field_text(
                         &text,
                         current_tag.as_str(),
@@ -124,7 +124,7 @@ impl NatureSubscriptionParser {
                     );
                 }
                 Ok(Event::End(ref e)) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_string();
                     if name == "item" {
                         in_item = false;
 
