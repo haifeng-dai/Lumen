@@ -10,6 +10,34 @@ use log::debug;
 use services::pdf::TextPageData;
 use std::sync::Arc;
 
+fn thumbnail_response_in_keep_range(
+    page: usize,
+    keep_range: (usize, usize),
+    total_pages: usize,
+) -> bool {
+    total_pages == 0 || (page >= keep_range.0 && page <= keep_range.1)
+}
+
+#[cfg(test)]
+mod thumbnail_response_tests {
+    use super::thumbnail_response_in_keep_range;
+
+    #[test]
+    fn layout_union_keeps_old_in_flight_response() {
+        assert!(thumbnail_response_in_keep_range(15, (9, 16), 30));
+    }
+
+    #[test]
+    fn stable_eviction_drops_response_outside_keep_range() {
+        assert!(!thumbnail_response_in_keep_range(15, (9, 13), 30));
+    }
+
+    #[test]
+    fn empty_document_has_no_invalid_response() {
+        assert!(thumbnail_response_in_keep_range(99, (0, 0), 0));
+    }
+}
+
 impl PdfReaderView {
     /// 缓存主页面渲染图。raw_image 存入 raw_page_images 供选区和 Pin 裁剪用，
     /// 同时转为 ImageSource 存入 page_images 供 GPUI 渲染。
@@ -95,15 +123,16 @@ impl PdfReaderView {
     ) {
         // 丢弃已离开可见范围的过期响应
         let page_usize = page as usize;
-        let buffer = 1;
-        if self.total_pages > 0
-            && (page_usize + buffer < self.visible_thumb_first
-                || page_usize > self.visible_thumb_last + buffer)
-        {
-            self.thumb_render_requests_pending.remove(&page);
+        let was_pending = self.thumb_render_requests_pending.remove(&page);
+        if !was_pending {
+            // 文档页结构变化会清理 pending；清理后的旧响应不得写入新索引。
             return;
         }
-        self.thumb_render_requests_pending.remove(&page);
+        let (keep_first, keep_last) = self.thumbnail_response_keep_range;
+        if !thumbnail_response_in_keep_range(page_usize, (keep_first, keep_last), self.total_pages)
+        {
+            return;
+        }
         self.cache_thumbnail_image(page, image, cx);
     }
 

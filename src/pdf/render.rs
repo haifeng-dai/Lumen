@@ -106,6 +106,7 @@ impl Render for PdfReaderView {
             }
             self.is_restoring = false;
         } else if self.total_pages > 0 {
+            let was_programmatic_scroll = self.programmatic_scroll;
             let scroll_top = self.list_state.logical_scroll_top();
             let toolbar_height = rems(TOOLBAR_HEIGHT_REMS).to_pixels(window.rem_size());
             let tab_bar_h = self.tab_bar_offset_px;
@@ -152,6 +153,11 @@ impl Render for PdfReaderView {
                     self.clear_thumbnail_selection(cx);
                 }
 
+                // 主阅读区导航只让缩略图跟随并补齐缺失项，不在本次范围变化中淘汰缓存。
+                if self.is_left_sidebar_open && (page_changed || was_programmatic_scroll) {
+                    self.thumbnail_layout_refresh_pending = true;
+                }
+
                 if page_changed && self.is_left_sidebar_open {
                     let thumbnail_scroll = self.thumbnail_list_state.logical_scroll_top();
                     // 如果当前页面已经对齐在顶部（容差 1px），则不触发强制对齐，防止拉动侧边栏时产生跳变
@@ -167,6 +173,9 @@ impl Render for PdfReaderView {
                     }
                 }
             }
+            if self.is_left_sidebar_open && was_programmatic_scroll {
+                self.thumbnail_layout_refresh_pending = true;
+            }
             self.programmatic_scroll = false;
         }
 
@@ -176,7 +185,9 @@ impl Render for PdfReaderView {
             self.window_scale_factor = window.scale_factor();
             self.last_rem_size = f32::from(window.rem_size());
             self.refresh_page_visibility(window, cx);
-            if self.is_left_sidebar_open {
+            if self.is_left_sidebar_open
+                && self.active_left_sidebar_tab == LeftSidebarTab::Thumbnails
+            {
                 self.refresh_thumb_visibility(window, cx);
             }
         }
@@ -293,6 +304,8 @@ impl Render for PdfReaderView {
 
                     if event.drag(cx).0 {
                         // 左侧 resizer
+                        this.is_resizing_left_sidebar = true;
+                        this.thumbnail_layout_refresh_pending = true;
                         let current_right_w = if this.is_right_sidebar_open {
                             this.right_sidebar_width
                         } else {
@@ -347,12 +360,14 @@ impl Render for PdfReaderView {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.is_resizing_left_sidebar = false;
                     this.handle_global_mouse_up(event, window, cx);
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.is_resizing_left_sidebar = false;
                     this.handle_global_mouse_up(event, window, cx);
                 }),
             )

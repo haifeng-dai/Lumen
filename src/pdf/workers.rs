@@ -57,6 +57,11 @@ impl super::PdfReaderView {
                                             this.visible_thumb_first = usize::MAX;
                                             this.visible_thumb_last = 0;
                                             this.thumb_render_requests_pending.clear();
+                                            this.thumbnail_layout_refresh_pending = true;
+                                            this.thumbnail_eviction_pending = false;
+                                            this.thumbnail_layout_width = -1.0;
+                                            this.thumbnail_layout_height = -1.0;
+                                            this.thumbnail_response_keep_range = (0, 0);
 
                                             // 主页面和缩略图渲染由 render() 里的
                                             // refresh_page_visibility / refresh_thumb_visibility 触发
@@ -183,6 +188,11 @@ impl super::PdfReaderView {
                                             this.visible_thumb_first = usize::MAX;
                                             this.visible_thumb_last = 0;
                                             this.thumb_render_requests_pending.clear();
+                                            this.thumbnail_layout_refresh_pending = true;
+                                            this.thumbnail_eviction_pending = false;
+                                            this.thumbnail_layout_width = -1.0;
+                                            this.thumbnail_layout_height = -1.0;
+                                            this.thumbnail_response_keep_range = (0, 0);
 
                                             // 重新定位滚动位置并安全限制页码
                                             let target_page = (this.current_page as usize)

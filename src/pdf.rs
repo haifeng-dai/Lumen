@@ -176,6 +176,17 @@ pub struct PdfReaderView {
     pub(crate) visible_thumb_first: usize,
     pub(crate) visible_thumb_last: usize,
     pub(crate) thumb_render_requests_pending: HashSet<u16>,
+    /// 左栏布局变化后，等待下一帧同步缩略图范围。
+    pub(crate) thumbnail_layout_refresh_pending: bool,
+    /// 正在拖动左栏尺寸调整器。
+    pub(crate) is_resizing_left_sidebar: bool,
+    /// 缩略图范围变化后等待稳定帧再淘汰。
+    pub(crate) thumbnail_eviction_pending: bool,
+    /// 最近布局确认输入（左栏实际宽度、缩略图可用高度）。
+    pub(crate) thumbnail_layout_width: f32,
+    pub(crate) thumbnail_layout_height: f32,
+    /// 异步缩略图响应的保留范围。
+    pub(crate) thumbnail_response_keep_range: (usize, usize),
 
     // ─── 画中画 (PiP) ────────────────────────────────────
     pub(crate) pins: Vec<pip::PiPPin>,

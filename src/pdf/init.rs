@@ -149,6 +149,12 @@ impl super::PdfReaderView {
             visible_thumb_first: 0,
             visible_thumb_last: 0,
             thumb_render_requests_pending: HashSet::new(),
+            thumbnail_layout_refresh_pending: true,
+            is_resizing_left_sidebar: false,
+            thumbnail_eviction_pending: false,
+            thumbnail_layout_width: -1.0,
+            thumbnail_layout_height: -1.0,
+            thumbnail_response_keep_range: (0, 0),
             find_char_cache: HashMap::new(),
 
             is_mouse_down: false,

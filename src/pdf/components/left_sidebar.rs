@@ -25,6 +25,29 @@ struct FlattenedOutlineItem {
     has_children: bool,
 }
 
+fn thumbnail_refresh_decision(
+    range_changed: bool,
+    layout_refresh_pending: bool,
+    resizing_left_sidebar: bool,
+    eviction_pending: bool,
+) -> (bool, bool) {
+    if resizing_left_sidebar {
+        return (true, false);
+    }
+    if !range_changed && !layout_refresh_pending && !eviction_pending {
+        return (false, false);
+    }
+    (true, range_changed || layout_refresh_pending)
+}
+
+fn should_evict_thumbnail_cache(
+    range_changed: bool,
+    layout_refresh_pending: bool,
+    eviction_pending: bool,
+) -> bool {
+    !range_changed && !layout_refresh_pending && eviction_pending
+}
+
 impl PdfReaderView {
     pub(crate) fn render_left_sidebar(
         &mut self,
@@ -65,6 +88,7 @@ impl PdfReaderView {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.active_left_sidebar_tab = LeftSidebarTab::Thumbnails;
                                 this.search_text_storage = None;
+                                this.thumbnail_layout_refresh_pending = true;
                                 cx.notify();
                             })),
                     )
@@ -311,6 +335,15 @@ impl PdfReaderView {
         )
     }
 
+    fn thumbnail_layout_metrics(&self, window: &Window) -> (f32, f32) {
+        let toolbar_h = f32::from(rems(TOOLBAR_HEIGHT_REMS).to_pixels(window.rem_size()));
+        (
+            f32::from(self.left_sidebar_width),
+            (f32::from(window.viewport_size().height) - self.tab_bar_offset_px - toolbar_h)
+                .max(0.0),
+        )
+    }
+
     /// 淘汰可见范围 [keep_first-1, keep_last+1] 之外的缩略图数据。
     pub(crate) fn evict_distant_thumbnails(
         &mut self,
@@ -377,16 +410,79 @@ impl PdfReaderView {
         self.ensure_thumbnail_text(page_u16, cx);
     }
 
-    /// 统一入口：计算缩略图可见范围 → 淘汰远页 → 调度渲染请求。
+    /// 同步缩略图可见范围并调度缺失数据。
     pub(crate) fn refresh_thumb_visibility(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (first, last) = self.calculate_visible_thumb_range(window);
-        if first == self.visible_thumb_first && last == self.visible_thumb_last {
+        let range_changed = first != self.visible_thumb_first || last != self.visible_thumb_last;
+        let (layout_width, layout_height) = self.thumbnail_layout_metrics(window);
+        let layout_changed = (layout_width - self.thumbnail_layout_width).abs() > 0.1
+            || (layout_height - self.thumbnail_layout_height).abs() > 0.1;
+
+        if layout_changed {
+            self.thumbnail_layout_width = layout_width;
+            self.thumbnail_layout_height = layout_height;
+            self.thumbnail_layout_refresh_pending = true;
+            self.thumbnail_eviction_pending = false;
+        }
+
+        let stable_eviction = should_evict_thumbnail_cache(
+            range_changed,
+            self.thumbnail_layout_refresh_pending,
+            self.thumbnail_eviction_pending,
+        );
+        let layout_refresh = self.thumbnail_layout_refresh_pending;
+        let (update_range, schedule) = thumbnail_refresh_decision(
+            range_changed,
+            self.thumbnail_layout_refresh_pending,
+            self.is_resizing_left_sidebar,
+            self.thumbnail_eviction_pending,
+        );
+        if !update_range {
             return;
         }
+
+        if self.is_resizing_left_sidebar {
+            self.visible_thumb_first = first;
+            self.visible_thumb_last = last;
+            self.thumbnail_layout_refresh_pending = true;
+            return;
+        }
+
         self.visible_thumb_first = first;
         self.visible_thumb_last = last;
-        self.evict_distant_thumbnails(first, last, window);
-        self.schedule_thumbnail_renders(first, last, cx);
+        if schedule {
+            self.schedule_thumbnail_renders(first, last, cx);
+        }
+
+        // 范围变化先补齐缺失页，连续滚动停止后的下一帧才执行淘汰。
+        if stable_eviction {
+            self.evict_distant_thumbnails(first, last, window);
+            self.thumbnail_eviction_pending = false;
+            self.thumbnail_response_keep_range = (
+                first.saturating_sub(1),
+                (last + 1).min(self.total_pages.saturating_sub(1)),
+            );
+        } else if range_changed && !layout_refresh {
+            self.thumbnail_eviction_pending = true;
+            self.thumbnail_response_keep_range.0 = self
+                .thumbnail_response_keep_range
+                .0
+                .min(first.saturating_sub(1));
+            self.thumbnail_response_keep_range.1 = self
+                .thumbnail_response_keep_range
+                .1
+                .max((last + 1).min(self.total_pages.saturating_sub(1)));
+        } else if layout_refresh {
+            self.thumbnail_response_keep_range.0 = self
+                .thumbnail_response_keep_range
+                .0
+                .min(first.saturating_sub(1));
+            self.thumbnail_response_keep_range.1 = self
+                .thumbnail_response_keep_range
+                .1
+                .max((last + 1).min(self.total_pages.saturating_sub(1)));
+        }
+        self.thumbnail_layout_refresh_pending = false;
     }
 
     /// 缩略图文字：使用固定 250px 宽度请求文字数据（generation=1）。
@@ -1376,5 +1472,50 @@ impl PdfReaderView {
                     }),
             )
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod thumbnail_refresh_tests {
+    use super::{should_evict_thumbnail_cache, thumbnail_refresh_decision};
+
+    #[test]
+    fn layout_change_updates_range_without_eviction() {
+        assert_eq!(
+            thumbnail_refresh_decision(true, true, false, false),
+            (true, true)
+        );
+    }
+
+    #[test]
+    fn scrolling_updates_without_immediate_eviction() {
+        assert_eq!(
+            thumbnail_refresh_decision(true, false, false, false),
+            (true, true)
+        );
+        assert!(!should_evict_thumbnail_cache(true, false, true));
+    }
+
+    #[test]
+    fn unchanged_range_does_nothing() {
+        assert_eq!(
+            thumbnail_refresh_decision(false, false, false, false),
+            (false, false)
+        );
+    }
+
+    #[test]
+    fn resizing_only_records_range() {
+        assert_eq!(
+            thumbnail_refresh_decision(true, false, true, false),
+            (true, false)
+        );
+    }
+
+    #[test]
+    fn stable_frame_is_the_only_eviction_point() {
+        assert!(!should_evict_thumbnail_cache(true, false, true));
+        assert!(!should_evict_thumbnail_cache(false, true, true));
+        assert!(should_evict_thumbnail_cache(false, false, true));
     }
 }
