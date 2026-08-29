@@ -85,6 +85,10 @@ impl PdfWindowController {
     pub fn activate_pdf_tab(&mut self, doc_id: String, cx: &mut Context<Self>) {
         self.active_tab_id = Some(doc_id.clone());
 
+        if let Some(tab_index) = self.open_pdf_tab_order.iter().position(|id| id == &doc_id) {
+            self.tab_scroll_handle.scroll_to_item(tab_index);
+        }
+
         if self.open_pdf_tabs.get(&doc_id).is_none_or(|v| v.is_none()) {
             self.reload_pdf_tab(doc_id, cx);
         }
