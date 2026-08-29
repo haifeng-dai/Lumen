@@ -3,6 +3,8 @@ use anyhow::Result;
 use models::Literature;
 use std::fmt::Write;
 
+const IEEE_MAX_LISTED_AUTHORS: usize = 6;
+
 /// IEEE Transactions 引用格式导出器
 /// 格式示例: [1] J. Doe and J. Smith, "Title of Paper," Journal Name, vol. 1, no. 2, pp. 3-4, 2024.
 pub struct IeeeExporter;
@@ -12,39 +14,39 @@ impl IeeeExporter {
         let mut s = String::new();
         write!(s, "[{}] ", index + 1).unwrap();
 
-        // Authors: J. Smith, A. Taylor, and ...
         let authors = lit
             .authors
             .iter()
-            .map(|a| {
-                let first_initial = a
+            .map(|author| {
+                let first_initial = author
                     .first_name
                     .chars()
                     .next()
-                    .map(|c| format!("{c}. "))
+                    .map(|character| format!("{character}. "))
                     .unwrap_or_default();
-                format!("{}{}", first_initial, a.last_name)
+                format!("{first_initial}{}", author.last_name)
             })
             .collect::<Vec<_>>();
 
-        if !authors.is_empty() {
-            if authors.len() == 1 {
-                s.push_str(&authors[0]);
-            } else if authors.len() == 2 {
-                s.push_str(&format!("{} and {}", authors[0], authors[1]));
-            } else {
-                for (i, name) in authors.iter().enumerate() {
-                    if i == authors.len() - 1 {
-                        s.push_str(&format!(", and {name}"));
-                    } else {
-                        if i > 0 {
-                            s.push_str(", ");
-                        }
-                        s.push_str(name);
-                    }
-                }
+        let authors = match authors.as_slice() {
+            [] => String::new(),
+            [name] => name.clone(),
+            [first, second] => format!("{first} and {second}"),
+            [first, ..] if authors.len() > IEEE_MAX_LISTED_AUTHORS => {
+                format!("{first} et al.")
             }
-            s.push_str(", ");
+            _ => {
+                let last_index = authors.len() - 1;
+                format!(
+                    "{}, and {}",
+                    authors[..last_index].join(", "),
+                    authors[last_index]
+                )
+            }
+        };
+
+        if !authors.is_empty() {
+            write!(s, "{authors}, ").unwrap();
         }
 
         // Title
@@ -97,5 +99,35 @@ impl Exporter for IeeeExporter {
             .map(|(i, lit)| self.format_ieee(i, lit, abbreviate_journal))
             .collect();
         Ok(lines.join("\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IeeeExporter;
+    use models::{LiteratureType, create_author, create_literature};
+
+    fn literature_with_authors(count: usize) -> models::Literature {
+        let mut literature = create_literature("test", "Example", LiteratureType::Article);
+        literature.authors = (1..=count)
+            .map(|index| create_author(format!("Author{index}"), "Given"))
+            .collect();
+        literature
+    }
+
+    #[test]
+    fn formats_author_lists_up_to_six_names() {
+        assert!(IeeeExporter.format_ieee(0, &literature_with_authors(6), false).starts_with(
+            "[1] G. Author1, G. Author2, G. Author3, G. Author4, G. Author5, and G. Author6, "
+        ));
+    }
+
+    #[test]
+    fn abbreviates_author_lists_with_more_than_six_names() {
+        assert!(
+            IeeeExporter
+                .format_ieee(0, &literature_with_authors(7), false)
+                .starts_with("[1] G. Author1 et al., ")
+        );
     }
 }
