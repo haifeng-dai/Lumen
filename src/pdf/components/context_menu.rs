@@ -650,7 +650,7 @@ impl PdfReaderView {
         let cw = (w * iw) as u32;
         let ch = (h * ih) as u32;
         let cropped = image::imageops::crop_imm(img, cx, cy, cw, ch).to_image();
-        helpers::copy_rgba_to_clipboard(&cropped);
+        helpers::copy_bgra_to_clipboard(&cropped);
     }
 
     /// 将矩形标注区域裁剪并另存为 PNG 文件。
@@ -673,6 +673,7 @@ impl PdfReaderView {
         let crop_w = (w * iw) as u32;
         let crop_h = (h * ih) as u32;
         let cropped = image::imageops::crop_imm(img, crop_x, crop_y, crop_w, crop_h).to_image();
+        let cropped = helpers::bgra_to_rgba(&cropped);
         let name = self.document_title.clone();
 
         let receiver = cx.prompt_for_paths(PathPromptOptions {

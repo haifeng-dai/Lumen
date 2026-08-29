@@ -285,7 +285,7 @@ impl super::super::PdfReaderView {
             .find(|p| p.id == pin_id)
             .and_then(|p| p.raw_image.clone());
         if let Some(img) = raw {
-            crate::pdf::helpers::copy_rgba_to_clipboard(&img);
+            crate::pdf::helpers::copy_bgra_to_clipboard(&img);
         }
     }
 
@@ -297,6 +297,7 @@ impl super::super::PdfReaderView {
             .find(|p| p.id == pin_id)
             .and_then(|p| p.raw_image.clone());
         let Some(img) = raw else { return };
+        let img = crate::pdf::helpers::bgra_to_rgba(&img);
         let name = self.document_title.clone();
 
         let receiver = cx.prompt_for_paths(PathPromptOptions {

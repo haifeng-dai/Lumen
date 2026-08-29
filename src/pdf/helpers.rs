@@ -13,16 +13,52 @@ pub fn make_image_source(raw: image::RgbaImage) -> gpui::ImageSource {
     gpui::ImageSource::Render(Arc::new(render_img))
 }
 
-/// 将 RGBA 图片写入系统剪贴板。
-pub fn copy_rgba_to_clipboard(img: &image::RgbaImage) {
+/// 将 PDF 渲染缓存中的 BGRA 图片转换为标准 RGBA 图片。
+///
+/// `RgbaImage` 是现有缓存使用的类型名，但 MuPDF 的 `device_bgr()` 输出
+/// 实际上按 BGRA 字节排列。该函数复制输入并只交换 R/B，避免污染仍供
+/// GPUI 显示的原始缓存；G/A、尺寸和透明度语义保持不变。
+pub(crate) fn bgra_to_rgba(img: &image::RgbaImage) -> image::RgbaImage {
+    let mut converted = img.clone();
+    for pixel in converted.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    converted
+}
+
+/// 将 PDF 渲染缓存中的 BGRA 图片转换后写入系统剪贴板。
+pub fn copy_bgra_to_clipboard(img: &image::RgbaImage) {
     use arboard::Clipboard;
+    let rgba = bgra_to_rgba(img);
     if let Ok(mut cb) = Clipboard::new() {
         cb.set_image(arboard::ImageData {
-            width: img.width() as usize,
-            height: img.height() as usize,
-            bytes: std::borrow::Cow::from(img.as_raw().clone()),
+            width: rgba.width() as usize,
+            height: rgba.height() as usize,
+            bytes: std::borrow::Cow::from(rgba.as_raw().clone()),
         })
         .ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bgra_to_rgba;
+    use image::ImageBuffer;
+
+    #[test]
+    fn bgra_to_rgba_swaps_red_and_blue() {
+        let input = ImageBuffer::from_raw(1, 1, vec![10, 20, 30, 40]).unwrap();
+        let output = bgra_to_rgba(&input);
+        assert_eq!(output.as_raw(), &[30, 20, 10, 40]);
+        assert_eq!(input.as_raw(), &[10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn bgra_to_rgba_converts_each_pixel_without_reordering() {
+        let input = ImageBuffer::from_raw(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let output = bgra_to_rgba(&input);
+        assert_eq!(output.as_raw(), &[3, 2, 1, 4, 7, 6, 5, 8]);
+        assert_eq!(input.as_raw(), &[1, 2, 3, 4, 5, 6, 7, 8]);
     }
 }
 
