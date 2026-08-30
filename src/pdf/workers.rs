@@ -39,6 +39,7 @@ impl super::PdfReaderView {
                                             this.total_pages = page_count;
                                             this.page_sizes = page_sizes;
                                             this.worker_state = WorkerState::Running;
+                                            this.link_navigation_history.clear();
                                             this.list_state.reset(page_count);
                                             this.thumbnail_list_state.reset(page_count);
                                             this.is_restoring = true;
@@ -167,6 +168,7 @@ impl super::PdfReaderView {
                                             );
                                             this.total_pages = page_count;
                                             this.page_sizes = page_sizes;
+                                            this.link_navigation_history.clear();
                                             this.list_state.reset(page_count);
                                             this.thumbnail_list_state.reset(page_count);
 

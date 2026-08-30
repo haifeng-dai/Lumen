@@ -14,5 +14,5 @@ mod tag;
 pub use annotation::PdfPersistence;
 pub use attachment::AttachmentService;
 pub use folder::FolderService;
-pub use literature::LiteratureService;
+pub use literature::{BatchRenameFailure, BatchRenameFailureKind, LiteratureService};
 pub use tag::TagService;

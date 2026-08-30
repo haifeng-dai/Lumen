@@ -13,11 +13,118 @@ use std::sync::Arc;
 use std::{collections, fs};
 
 use crate::analysis::CCFService;
-use crate::utils::filename::{FilenameOptions, generate_literature_filename};
+use crate::utils::filename::{
+    batch_attachment_prefix, generate_batch_attachment_filename_from_prefix,
+};
 
 pub struct LiteratureService;
 
+#[derive(Debug, Default)]
+pub(crate) struct AttachmentRenameStats {
+    pub(crate) success: usize,
+    pub(crate) skipped: usize,
+    pub(crate) failures: Vec<BatchRenameFailure>,
+    pub(crate) renamed: Vec<(String, String)>,
+}
+
+#[derive(Debug)]
+pub struct BatchRenameFailure {
+    pub attachment_id: String,
+    pub kind: BatchRenameFailureKind,
+}
+
+#[derive(Debug)]
+pub enum BatchRenameFailureKind {
+    SourceNotRegularFile { path: String },
+    SourceNameUnreadable,
+    TargetExists { path: String },
+    RenameFailed { error: String },
+}
+
 impl LiteratureService {
+    pub(crate) fn rename_local_attachments(
+        &self,
+        lit: &mut Literature,
+        template: &str,
+    ) -> AttachmentRenameStats {
+        let mut stats = AttachmentRenameStats::default();
+        let lit_snapshot = lit.clone();
+        let prefix = batch_attachment_prefix(&lit_snapshot, template);
+        for att in &mut lit.attachments {
+            let source = Path::new(&att.file_path);
+            let failure = |kind: BatchRenameFailureKind,
+                           reason: String,
+                           stats: &mut AttachmentRenameStats| {
+                error!("批量重命名附件失败: attachment={}, {reason}", att.id);
+                stats.failures.push(BatchRenameFailure {
+                    attachment_id: att.id.clone(),
+                    kind,
+                });
+            };
+            if !source.is_file() {
+                failure(
+                    BatchRenameFailureKind::SourceNotRegularFile {
+                        path: att.file_path.clone(),
+                    },
+                    format!("源文件不存在或不是普通文件: {}", att.file_path),
+                    &mut stats,
+                );
+                continue;
+            }
+            let Some(old_name) = source.file_name().and_then(|name| name.to_str()) else {
+                failure(
+                    BatchRenameFailureKind::SourceNameUnreadable,
+                    "源文件名无法解析".to_string(),
+                    &mut stats,
+                );
+                continue;
+            };
+            let extension = source
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+            let new_name = generate_batch_attachment_filename_from_prefix(
+                &prefix,
+                old_name,
+                extension,
+                att.is_main,
+            );
+            if new_name == old_name {
+                stats.skipped += 1;
+                continue;
+            }
+            let parent = source.parent().unwrap_or_else(|| Path::new("."));
+            let target = parent.join(&new_name);
+            if target.exists() {
+                failure(
+                    BatchRenameFailureKind::TargetExists {
+                        path: target.display().to_string(),
+                    },
+                    format!("目标文件已存在: {}", target.display()),
+                    &mut stats,
+                );
+                continue;
+            }
+            let old_filename = att.file_name.clone();
+            if let Err(err) = fs::rename(source, &target) {
+                failure(
+                    BatchRenameFailureKind::RenameFailed {
+                        error: err.to_string(),
+                    },
+                    format!("文件系统重命名失败: {err}"),
+                    &mut stats,
+                );
+                continue;
+            }
+            att.file_name = new_name;
+            att.file_path = target.to_string_lossy().to_string();
+            att.is_dirty = true;
+            stats.renamed.push((att.id.clone(), old_filename));
+            stats.success += 1;
+        }
+        stats
+    }
+
     #[must_use]
     pub fn new() -> Self {
         debug!("文献服务: 初始化");
@@ -324,75 +431,20 @@ impl LiteratureService {
         db: Arc<Database>,
         notify: Arc<dyn Fn() + Send + Sync>,
         filename_template: &str,
-        queue_remote_rename: impl Fn(&str, &str),
         mut lit: Literature,
-    ) -> Result<()> {
+    ) -> Result<Vec<(String, String)>> {
         sanitize_arxiv_identifiers(&mut lit);
         let lit_id = lit.id.clone();
         info!("更新文献[{lit_id}]: {}", lit.title);
 
         // --- 智能重命名逻辑 ---
-        let template = filename_template.to_string();
-
-        // 预先提取元数据
-        let (last_name, first_name) = lit.authors.first().map_or_else(
-            || ("Unknown".to_string(), String::new()),
-            |a| (a.last_name.clone(), a.first_name.clone()),
+        let rename_stats = self.rename_local_attachments(&mut lit, filename_template);
+        debug!(
+            "更新文献详情: 成功 {}, 跳过 {}, 失败 {}",
+            rename_stats.success,
+            rename_stats.skipped,
+            rename_stats.failures.len()
         );
-        let year_str = lit
-            .year
-            .map_or_else(|| "0000".to_string(), |y| y.to_string());
-        let publication = lit
-            .publication
-            .as_ref()
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
-        let lit_title_clone = lit.title.clone();
-
-        let att_count = lit.attachments.len();
-        debug!("更新文献详情: {} 个附件待处理", att_count);
-        for att in lit.attachments.iter_mut() {
-            let path = Path::new(&att.file_path);
-            if !path.exists() {
-                continue;
-            }
-
-            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if extension.is_empty() {
-                continue;
-            }
-
-            let options = FilenameOptions::new(
-                &last_name,
-                &first_name,
-                &year_str,
-                &lit_title_clone,
-                &publication,
-                extension,
-                att.is_main,
-            );
-            let new_filename = generate_literature_filename(&options, Some(&template));
-
-            if new_filename != att.file_name {
-                let parent = path.parent().unwrap_or_else(|| Path::new("."));
-                let new_path = parent.join(&new_filename);
-                let old_filename = att.file_name.clone();
-
-                info!("自动重命名: {old_filename} -> {new_filename}");
-
-                if let Err(e) = fs::rename(path, &new_path) {
-                    error!("重命名失败 {path:?} -> {new_path:?}: {e}");
-                    continue;
-                }
-
-                queue_remote_rename(&att.id, &old_filename);
-
-                att.file_name = new_filename;
-                att.file_path = new_path.to_string_lossy().to_string();
-
-                att.is_dirty = true;
-            }
-        }
 
         // 更新版本和时间
         lit.version += 1;
@@ -401,7 +453,7 @@ impl LiteratureService {
         self.save_literature(db, notify, lit)?;
 
         info!("文献详细信息更新流程完成 (ID: {lit_id})");
-        Ok(())
+        Ok(rename_stats.renamed)
     }
 
     pub fn update_literature_reading_status(

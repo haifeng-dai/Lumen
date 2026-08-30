@@ -26,11 +26,18 @@ mod workers;
 pub(crate) use render::DraggedSidebar;
 pub use types::*;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PdfNavigationLocation {
+    page_index: u16,
+    offset_y: f32,
+}
+
 pub struct PdfReaderView {
     pub(crate) pdf_service: Arc<PdfService>,
     pub(crate) delegate: Option<Arc<dyn PdfReaderDelegate>>,
     pub(crate) current_page: u16,
     pub(crate) current_offset_y: f32,
+    link_navigation_history: Vec<PdfNavigationLocation>,
     pub(crate) total_pages: usize,
     pub(crate) page_sizes: Vec<(f32, f32)>,
 

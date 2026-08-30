@@ -186,6 +186,22 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::CloudSyncDesc => "Cloud-Synchronisation wird entwickelt.",
         I18nKey::AboutDesc => "Hochleistungs-Literaturverwaltung auf GPUI-Basis.",
         I18nKey::BatchRename => "Batch Rename",
+        I18nKey::BatchRenameCompleted => {
+            "Stapelumbenennung abgeschlossen: {} erfolgreich, {} übersprungen"
+        }
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "Stapelumbenennung abgeschlossen: {} erfolgreich, {} übersprungen, {} fehlgeschlagen. {}"
+        }
+        I18nKey::BatchRenameFailed => "Stapelumbenennung konnte nicht fortgesetzt werden: {}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "Quelldatei fehlt oder ist keine reguläre Datei: {}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => "Quelldateiname kann nicht gelesen werden",
+        I18nKey::BatchRenameTargetExists => "Zieldatei ist bereits vorhanden: {}",
+        I18nKey::BatchRenameRenameFailed => "Umbenennen der Datei fehlgeschlagen: {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "Dateien wurden umbenannt, aber Datensätze nicht gespeichert; Fortsetzung nicht möglich: {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup Orphaned Files",
         I18nKey::Copyright => "© 2026 Lumen. Alle Rechte vorbehalten.",
         // Sort

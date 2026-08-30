@@ -269,3 +269,124 @@ pub fn generate_literature_filename(options: &FilenameOptions, template: Option<
     debug!("文件命名: 最终文件名 => {filename}");
     filename
 }
+
+/// 计算一篇文献所有附件共享的安全模板前缀。
+#[must_use]
+pub(crate) fn batch_attachment_prefix(lit: &Literature, template: &str) -> String {
+    let options = filename_options_from_literature(lit, "", false);
+    sanitize_filename(&generate_filename_from_template(template, &options))
+}
+
+#[must_use]
+pub(crate) fn generate_batch_attachment_filename_from_prefix(
+    prefix: &str,
+    old_name: &str,
+    extension: &str,
+    is_main: bool,
+) -> String {
+    let tail = existing_random_tail(old_name).unwrap_or_else(|| {
+        let suffix = &Uuid::new_v4().to_string()[..4];
+        if is_main {
+            format!("_{suffix}")
+        } else {
+            format!("_att_{suffix}")
+        }
+    });
+    if extension.is_empty() {
+        format!("{prefix}{tail}")
+    } else {
+        format!("{prefix}{tail}.{extension}")
+    }
+}
+
+fn existing_random_tail(old_name: &str) -> Option<String> {
+    let stem = Path::new(old_name).file_stem()?.to_str()?;
+    for marker in ["_att_", "_"] {
+        if let Some(index) = stem.rfind(marker) {
+            let suffix = &stem[index + marker.len()..];
+            if suffix.len() == 4 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Some(format!("{marker}{suffix}"));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod batch_filename_tests {
+    use super::{batch_attachment_prefix, generate_batch_attachment_filename_from_prefix};
+    use models::{LiteratureType, constructors::create_literature};
+
+    fn literature() -> models::Literature {
+        let mut lit = create_literature("lit", "A Title", LiteratureType::Article);
+        lit.year = Some(2024);
+        lit
+    }
+
+    #[test]
+    fn preserves_main_and_attachment_tails_and_extensions() {
+        let lit = literature();
+        assert_eq!(
+            generate_batch_attachment_filename_from_prefix(
+                &batch_attachment_prefix(&lit, "{author}-{year}"),
+                "old_ab12.pdf",
+                "pdf",
+                true,
+            ),
+            "Unknown-2024_ab12.pdf"
+        );
+        assert_eq!(
+            generate_batch_attachment_filename_from_prefix(
+                &batch_attachment_prefix(&lit, "{author}-{year}"),
+                "old_att_cd34.PNG",
+                "PNG",
+                false,
+            ),
+            "Unknown-2024_att_cd34.PNG"
+        );
+    }
+
+    #[test]
+    fn sanitizes_template_and_keeps_no_extension() {
+        let lit = literature();
+        let prefix = batch_attachment_prefix(&lit, "folder/{title}");
+        let name = generate_batch_attachment_filename_from_prefix(
+            &prefix,
+            "old_att_ef56.zip",
+            "zip",
+            false,
+        );
+        assert_eq!(name, "folder_A Title_att_ef56.zip");
+        assert!(
+            generate_batch_attachment_filename_from_prefix(
+                &batch_attachment_prefix(&lit, "{title}"),
+                "old_1234",
+                "",
+                true,
+            )
+            .ends_with("_1234")
+        );
+    }
+
+    #[test]
+    fn adds_tail_only_when_old_name_has_no_standard_tail() {
+        let lit = literature();
+        let prefix = batch_attachment_prefix(&lit, "{title}");
+        let first = generate_batch_attachment_filename_from_prefix(&prefix, "old.pdf", "pdf", true);
+        let second = generate_batch_attachment_filename_from_prefix(&prefix, &first, "pdf", true);
+        assert_eq!(first, second);
+        let stem = first.strip_suffix(".pdf").unwrap();
+        let tail = stem.rsplit_once('_').unwrap().1;
+        assert_eq!(tail.len(), 4);
+        assert!(tail.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let first =
+            generate_batch_attachment_filename_from_prefix(&prefix, "old.png", "png", false);
+        let second = generate_batch_attachment_filename_from_prefix(&prefix, &first, "png", false);
+        assert_eq!(first, second);
+        let stem = first.strip_suffix(".png").unwrap();
+        let tail = stem.rsplit_once("_att_").unwrap().1;
+        assert_eq!(tail.len(), 4);
+        assert!(tail.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+}

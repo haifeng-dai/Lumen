@@ -18,6 +18,8 @@ mod literature;
 mod smart;
 mod subscription;
 
+pub use literature::{BatchRenameSaveError, BatchRenameSummary};
+
 /// 主应用控制器
 ///
 /// 负责协调数据、UI 和业务逻辑

@@ -110,6 +110,7 @@ impl super::PdfReaderView {
             document_title: document_id,
             current_page: initial_state.page_index,
             current_offset_y: initial_state.offset_y,
+            link_navigation_history: Vec::new(),
             total_pages: 0,
             page_sizes: Vec::new(),
 

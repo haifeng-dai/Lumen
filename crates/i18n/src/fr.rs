@@ -186,6 +186,20 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::CloudSyncDesc => "La synchronisation cloud est en cours de développement.",
         I18nKey::AboutDesc => "Gestionnaire de littérature haute performance construit avec GPUI.",
         I18nKey::BatchRename => "Batch Rename",
+        I18nKey::BatchRenameCompleted => "Renommage groupé terminé : {} réussis, {} ignorés",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "Renommage groupé terminé : {} réussis, {} ignorés, {} échecs. {}"
+        }
+        I18nKey::BatchRenameFailed => "Impossible de poursuivre le renommage groupé : {}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "Le fichier source est absent ou n’est pas un fichier normal : {}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => "Impossible de lire le nom du fichier source",
+        I18nKey::BatchRenameTargetExists => "Le fichier cible existe déjà : {}",
+        I18nKey::BatchRenameRenameFailed => "Échec du renommage du fichier : {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "Les fichiers ont été renommés mais les enregistrements n’ont pas été sauvegardés ; impossible de continuer : {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup Orphaned Files",
         I18nKey::Copyright => "© 2026 Lumen. Tous droits réservés.",
         // Sort

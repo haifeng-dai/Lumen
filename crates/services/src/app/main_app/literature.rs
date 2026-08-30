@@ -1,10 +1,33 @@
 use anyhow::Result;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use models::constructors::*;
 use models::{FolderType, Literature};
 use uuid::Uuid;
 
 use super::MainApp;
+use crate::library::BatchRenameFailure;
+use std::fmt::{Display, Formatter};
+
+#[derive(Debug, Default)]
+pub struct BatchRenameSummary {
+    pub success: usize,
+    pub skipped: usize,
+    pub failures: Vec<BatchRenameFailure>,
+}
+
+#[derive(Debug)]
+pub struct BatchRenameSaveError {
+    pub detail: String,
+    pub renamed_count: usize,
+}
+
+impl Display for BatchRenameSaveError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "batch rename save failed: {}", self.detail)
+    }
+}
+
+impl std::error::Error for BatchRenameSaveError {}
 
 impl MainApp {
     pub fn add_literature(&self, lit: Literature) -> Result<()> {
@@ -29,16 +52,18 @@ impl MainApp {
             lit.title.chars().take(40).collect::<String>(),
             lit.id
         );
-        self.op_notify(|| {
-            let template = self.config.lock().unwrap().filename_template.clone();
-            self.literature_service.update_literature_details(
-                self.db.clone(),
-                self.data_changed_notify(),
-                &template,
-                |id, old| self.sync_service.queue_remote_rename(id, old),
-                lit,
-            )
-        })
+        let template = self.config.lock().unwrap().filename_template.clone();
+        let renamed = self.literature_service.update_literature_details(
+            self.db.clone(),
+            self.data_changed_notify(),
+            &template,
+            lit,
+        )?;
+        for (id, old_filename) in renamed {
+            self.sync_service.queue_remote_rename(&id, &old_filename);
+        }
+        self.notify_data_changed();
+        Ok(())
     }
 
     /// 内部删除实现，不触发 notify（供批量方法复用）
@@ -183,10 +208,62 @@ impl MainApp {
         })
     }
 
-    /// 批量重命名所有文献的主文件
-    pub fn batch_rename_files(&self) -> Result<()> {
-        warn!("MainApp: batch_rename_files 尚未实现");
-        Ok(())
+    /// 批量重命名所有未删除文献的本地附件。
+    pub fn batch_rename_files(&self) -> Result<BatchRenameSummary> {
+        let template = self.config.lock().unwrap().filename_template.clone();
+        let literatures = self.db.get_all_literatures()?;
+        let mut summary = BatchRenameSummary::default();
+        let mut persisted_changes = false;
+
+        for mut literature in literatures {
+            let stats = self
+                .literature_service
+                .rename_local_attachments(&mut literature, &template);
+            summary.success += stats.success;
+            summary.skipped += stats.skipped;
+            summary.failures.extend(stats.failures);
+
+            if stats.success > 0 {
+                let literature_id = literature.id.clone();
+                match self.literature_service.save_literature(
+                    self.db.clone(),
+                    self.data_changed_notify(),
+                    literature,
+                ) {
+                    Ok(()) => persisted_changes = true,
+                    Err(err) => {
+                        error!(
+                            "批量重命名保存失败: 文献={}, 本篇已改名={}, 底层错误={err}",
+                            literature_id, stats.success
+                        );
+                        for failure in &summary.failures {
+                            warn!("MainApp: 保存失败前已收集失败项: {failure:?}");
+                        }
+                        return Err(anyhow::Error::new(BatchRenameSaveError {
+                            detail: err.to_string(),
+                            renamed_count: stats.success,
+                        }));
+                    }
+                }
+                for (id, old_filename) in stats.renamed {
+                    self.sync_service.queue_remote_rename(&id, &old_filename);
+                }
+            }
+        }
+
+        if persisted_changes {
+            self.notify_data_changed();
+        }
+        for failure in &summary.failures {
+            warn!("MainApp: 批量重命名失败项: {failure:?}");
+        }
+        info!(
+            "MainApp: 批量重命名完成，成功 {}, 跳过 {}, 失败 {}",
+            summary.success,
+            summary.skipped,
+            summary.failures.len()
+        );
+        Ok(summary)
     }
 
     /// 删除指定的文献集合

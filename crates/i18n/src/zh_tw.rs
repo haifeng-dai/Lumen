@@ -181,6 +181,16 @@ pub fn translate(key: I18nKey) -> &'static str {
             "自定義附件重新命名規則。可用變數: {title}, {author}, {year}, {publication}, {firstname}, {lastname}, {firstchartitle}。支援使用 '/' 建立資料夾層級。"
         }
         I18nKey::BatchRename => "重命名",
+        I18nKey::BatchRenameCompleted => "批次重新命名完成：成功 {}，跳過 {}",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "批次重新命名完成：成功 {}，跳過 {}，失敗 {}。{}"
+        }
+        I18nKey::BatchRenameFailed => "批次重新命名無法繼續：{}",
+        I18nKey::BatchRenameSourceNotRegularFile => "來源檔案不存在或不是一般檔案：{}",
+        I18nKey::BatchRenameSourceNameUnreadable => "無法解析來源檔名",
+        I18nKey::BatchRenameTargetExists => "目標檔案已存在：{}",
+        I18nKey::BatchRenameRenameFailed => "檔案重新命名失敗：{}",
+        I18nKey::BatchRenameSaveFailed => "檔案已重新命名但記錄未儲存，無法繼續：{}",
         I18nKey::CleanupOrphanedFiles => "清理",
         I18nKey::GeneralOptions => "常規選項",
         I18nKey::CloudSyncDesc => {

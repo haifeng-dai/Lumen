@@ -9,4 +9,5 @@
 
 mod main_app;
 
-pub use main_app::MainApp;
+pub use crate::library::{BatchRenameFailure, BatchRenameFailureKind};
+pub use main_app::{BatchRenameSaveError, BatchRenameSummary, MainApp};

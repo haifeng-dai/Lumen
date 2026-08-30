@@ -186,6 +186,24 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::CloudSyncDesc => "Sincronización en la nube en desarrollo.",
         I18nKey::AboutDesc => "Gestor de literatura de alto rendimiento basado en GPUI.",
         I18nKey::BatchRename => "Batch Rename",
+        I18nKey::BatchRenameCompleted => {
+            "Cambio de nombre por lotes completado: {} correctos, {} omitidos"
+        }
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "Cambio de nombre por lotes completado: {} correctos, {} omitidos, {} fallidos. {}"
+        }
+        I18nKey::BatchRenameFailed => "No se puede continuar con el cambio de nombre por lotes: {}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "El archivo de origen falta o no es un archivo normal: {}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => {
+            "No se puede leer el nombre del archivo de origen"
+        }
+        I18nKey::BatchRenameTargetExists => "El archivo de destino ya existe: {}",
+        I18nKey::BatchRenameRenameFailed => "Error al cambiar el nombre del archivo: {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "Los archivos se renombraron, pero no se guardaron los registros; no se puede continuar: {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup Orphaned Files",
         I18nKey::Copyright => "© 2026 Lumen. Todos los derechos reservados.",
         // Sort

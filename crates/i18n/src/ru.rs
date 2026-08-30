@@ -188,6 +188,22 @@ pub fn translate(key: I18nKey) -> &'static str {
             "Высокопроизводительное приложение для управления литературой на базе GPUI. Чистый и мощный опыт чтения и исследований."
         }
         I18nKey::BatchRename => "Batch Rename",
+        I18nKey::BatchRenameCompleted => {
+            "Пакетное переименование завершено: успешно {}, пропущено {}"
+        }
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "Пакетное переименование завершено: успешно {}, пропущено {}, ошибок {}. {}"
+        }
+        I18nKey::BatchRenameFailed => "Невозможно продолжить пакетное переименование: {}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "Исходный файл отсутствует или не является обычным файлом: {}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => "Не удалось прочитать имя исходного файла",
+        I18nKey::BatchRenameTargetExists => "Целевой файл уже существует: {}",
+        I18nKey::BatchRenameRenameFailed => "Не удалось переименовать файл: {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "Файлы переименованы, но записи не сохранены; продолжение невозможно: {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup Orphaned Files",
         I18nKey::Copyright => "© 2026 Lumen. Все права защищены.",
         // Sort

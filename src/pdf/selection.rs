@@ -1215,11 +1215,37 @@ impl PdfReaderView {
             return;
         }
 
+        self.record_internal_link_source();
+
         let rem_size = f32::from(window.rem_size());
         let (_, display_h) =
             helpers::page_display_size(&self.page_sizes, page as usize, self.zoom_level, rem_size);
         let offset = px(internal_link_offset(normalized_y, display_h));
         self.scroll_to_page(page, offset, cx);
+    }
+
+    fn record_internal_link_source(&mut self) {
+        let top = self.list_state.logical_scroll_top();
+        let Some(page_index) = u16::try_from(top.item_ix).ok() else {
+            debug!("PDF 内部链接来源页码无效: {}", top.item_ix);
+            return;
+        };
+        if page_index as usize >= self.total_pages {
+            debug!("PDF 内部链接来源页码越界: {}", page_index);
+            return;
+        }
+        let scale = self.zoom_level * self.last_rem_size;
+        let Some(offset_y) = Self::navigation_offset_y(f32::from(top.offset_in_item), scale) else {
+            debug!("PDF 内部链接来源位置无效: scale={scale}");
+            return;
+        };
+        super::actions::push_navigation_location(
+            &mut self.link_navigation_history,
+            super::PdfNavigationLocation {
+                page_index,
+                offset_y,
+            },
+        );
     }
 
     pub(crate) fn hit_test_annotation(

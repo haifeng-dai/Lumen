@@ -10,12 +10,53 @@ use i18n::I18nKey;
 use services::pdf::TextPageData;
 use std::sync::Arc;
 
+use super::PdfNavigationLocation;
+
 // ── 缩放常量 ────────────────────────────────────────────
 pub const ZOOM_STEP: f32 = 0.1;
 pub const ZOOM_MIN: f32 = 0.1;
 pub const ZOOM_MAX: f32 = 5.0;
 
+pub(super) fn push_navigation_location(
+    history: &mut Vec<PdfNavigationLocation>,
+    location: PdfNavigationLocation,
+) {
+    history.push(location);
+    if history.len() > 64 {
+        history.remove(0);
+    }
+}
+
+pub(super) fn pop_valid_navigation_location(
+    history: &mut Vec<PdfNavigationLocation>,
+    total_pages: usize,
+) -> Option<PdfNavigationLocation> {
+    while let Some(location) = history.pop() {
+        if (location.page_index as usize) < total_pages {
+            return Some(location);
+        }
+    }
+    None
+}
+
 impl PdfReaderView {
+    pub(super) fn navigation_offset_y(offset_px: f32, scale: f32) -> Option<f32> {
+        if offset_px.is_finite() && scale.is_finite() && scale > 0.0 {
+            Some(offset_px / scale)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn navigation_offset_px(offset_y: f32, scale: f32) -> Option<Pixels> {
+        if offset_y.is_finite() && scale.is_finite() && scale > 0.0 {
+            let offset_px = offset_y * scale;
+            offset_px.is_finite().then(|| px(offset_px))
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         self.zoom_level = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         self.request_state_save(cx);
@@ -96,6 +137,9 @@ impl PdfReaderView {
             self.clear_thumbnail_selection(cx);
         }
         self.current_page = page_index;
+        let scale = self.zoom_level * self.last_rem_size;
+        self.current_offset_y =
+            Self::navigation_offset_y(f32::from(offset_in_item), scale).unwrap_or(0.0);
         self.programmatic_scroll = true;
         // 同步主视图位置
         self.list_state.scroll_to(ListOffset {
@@ -108,6 +152,21 @@ impl PdfReaderView {
                 .scroll_to_reveal_item(page_index as usize);
         }
 
+        cx.notify();
+    }
+
+    pub(crate) fn go_back_from_internal_link(&mut self, cx: &mut Context<Self>) {
+        let scale = self.zoom_level * self.last_rem_size;
+        while let Some(location) = super::actions::pop_valid_navigation_location(
+            &mut self.link_navigation_history,
+            self.total_pages,
+        ) {
+            let Some(offset) = Self::navigation_offset_px(location.offset_y, scale) else {
+                continue;
+            };
+            self.scroll_to_page(location.page_index, offset, cx);
+            return;
+        }
         cx.notify();
     }
 
@@ -581,5 +640,101 @@ impl PdfReaderView {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod internal_link_tests {
+    use super::{
+        PdfNavigationLocation, PdfReaderView, pop_valid_navigation_location,
+        push_navigation_location,
+    };
+
+    #[test]
+    fn navigation_offsets_round_trip_at_valid_scale() {
+        let unscaled = PdfReaderView::navigation_offset_y(240.0, 2.0).unwrap();
+        let restored = PdfReaderView::navigation_offset_px(unscaled, 1.5).unwrap();
+        assert_eq!(unscaled, 120.0);
+        assert_eq!(f32::from(restored), 180.0);
+    }
+
+    #[test]
+    fn navigation_offsets_reject_invalid_scale_or_values() {
+        assert!(PdfReaderView::navigation_offset_y(10.0, 0.0).is_none());
+        assert!(PdfReaderView::navigation_offset_y(10.0, f32::NAN).is_none());
+        assert!(PdfReaderView::navigation_offset_px(f32::INFINITY, 1.0).is_none());
+        assert!(PdfReaderView::navigation_offset_px(10.0, f32::INFINITY).is_none());
+    }
+
+    #[test]
+    fn navigation_history_is_lifo_and_preserves_same_page_offsets() {
+        let mut history = Vec::new();
+        push_navigation_location(
+            &mut history,
+            PdfNavigationLocation {
+                page_index: 2,
+                offset_y: 10.0,
+            },
+        );
+        push_navigation_location(
+            &mut history,
+            PdfNavigationLocation {
+                page_index: 2,
+                offset_y: 20.0,
+            },
+        );
+        assert_eq!(
+            pop_valid_navigation_location(&mut history, 3)
+                .unwrap()
+                .offset_y,
+            20.0
+        );
+        assert_eq!(
+            pop_valid_navigation_location(&mut history, 3)
+                .unwrap()
+                .offset_y,
+            10.0
+        );
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn navigation_history_caps_at_64_and_skips_invalid_pages() {
+        let mut history = Vec::new();
+        for page in 0..65 {
+            push_navigation_location(
+                &mut history,
+                PdfNavigationLocation {
+                    page_index: page,
+                    offset_y: page as f32,
+                },
+            );
+        }
+        assert_eq!(history.len(), 64);
+        assert_eq!(history[0].page_index, 1);
+        assert_eq!(
+            pop_valid_navigation_location(&mut history, 2)
+                .unwrap()
+                .page_index,
+            1
+        );
+
+        let mut invalid_history = vec![
+            PdfNavigationLocation {
+                page_index: 1,
+                offset_y: 1.0,
+            },
+            PdfNavigationLocation {
+                page_index: 9,
+                offset_y: 9.0,
+            },
+        ];
+        assert_eq!(
+            pop_valid_navigation_location(&mut invalid_history, 2)
+                .unwrap()
+                .page_index,
+            1
+        );
+        assert!(pop_valid_navigation_location(&mut invalid_history, 2).is_none());
     }
 }

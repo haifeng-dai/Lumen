@@ -245,6 +245,17 @@ impl PdfReaderView {
             .px_1()
             .shadow_md() // Subtle elevation
             .child(
+                Button::new("pdf-link-back")
+                    .ghost()
+                    .icon(IconName::Undo)
+                    .h(rems(1.4))
+                    .w(rems(1.4))
+                    .disabled(self.link_navigation_history.is_empty())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.go_back_from_internal_link(cx);
+                    })),
+            )
+            .child(
                 Button::new("pdf-prev")
                     .ghost()
                     .icon(IconName::ChevronLeft)

@@ -184,6 +184,16 @@ pub fn translate(key: I18nKey) -> &'static str {
             "自定义附件重命名规则。可用变量: {title}, {author}, {year}, {publication}, {firstname}, {lastname}, {firstchartitle}。支持使用 '/' 创建文件夹层级。"
         }
         I18nKey::BatchRename => "重命名",
+        I18nKey::BatchRenameCompleted => "批量重命名完成：成功 {}，跳过 {}",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "批量重命名完成：成功 {}，跳过 {}，失败 {}。{}"
+        }
+        I18nKey::BatchRenameFailed => "批量重命名无法继续：{}",
+        I18nKey::BatchRenameSourceNotRegularFile => "源文件不存在或不是普通文件：{}",
+        I18nKey::BatchRenameSourceNameUnreadable => "源文件名无法解析",
+        I18nKey::BatchRenameTargetExists => "目标文件已存在：{}",
+        I18nKey::BatchRenameRenameFailed => "文件重命名失败：{}",
+        I18nKey::BatchRenameSaveFailed => "文件已改名但记录未保存，无法继续：{}",
         I18nKey::CleanupOrphanedFiles => "清理",
         I18nKey::GeneralOptions => "常规选项",
         I18nKey::CloudSyncDesc => "配置云端同步以在多个设备间同步您的文献元数据和附件档案。",

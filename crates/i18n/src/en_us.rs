@@ -181,6 +181,20 @@ pub fn translate(key: I18nKey) -> &'static str {
             "Custom renaming rules for attachments. Available variables: {title}, {author}, {year}, {publication}, {firstname}, {lastname}, {firstchartitle}. Supports using '/' for folder hierarchy."
         }
         I18nKey::BatchRename => "Rename",
+        I18nKey::BatchRenameCompleted => "Batch rename completed: {} succeeded, {} skipped",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "Batch rename completed: {} succeeded, {} skipped, {} failed. {}"
+        }
+        I18nKey::BatchRenameFailed => "Batch rename could not continue: {}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "Source file is missing or not a regular file: {}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => "Source file name cannot be read",
+        I18nKey::BatchRenameTargetExists => "Target file already exists: {}",
+        I18nKey::BatchRenameRenameFailed => "File rename failed: {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "Files were renamed but records were not saved; cannot continue: {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup",
         I18nKey::GeneralOptions => "General Options",
         I18nKey::CloudSyncDesc => {

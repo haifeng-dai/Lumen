@@ -190,6 +190,20 @@ pub fn translate(key: I18nKey) -> &'static str {
             "GPUIで構築された高性能な文献管理アプリ。シンプルでスムーズ、かつ強力な学術読解と研究体験に焦点を当てています。"
         }
         I18nKey::BatchRename => "一括リネーム",
+        I18nKey::BatchRenameCompleted => "一括リネーム完了：成功 {}、スキップ {}",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "一括リネーム完了：成功 {}、スキップ {}、失敗 {}。{}"
+        }
+        I18nKey::BatchRenameFailed => "一括リネームを続行できません：{}",
+        I18nKey::BatchRenameSourceNotRegularFile => {
+            "ソースファイルが存在しないか通常ファイルではありません：{}"
+        }
+        I18nKey::BatchRenameSourceNameUnreadable => "ソースファイル名を読み取れません",
+        I18nKey::BatchRenameTargetExists => "対象ファイルは既に存在します：{}",
+        I18nKey::BatchRenameRenameFailed => "ファイルのリネームに失敗しました：{}",
+        I18nKey::BatchRenameSaveFailed => {
+            "ファイルはリネームされましたが記録を保存できないため続行できません：{}"
+        }
         I18nKey::CleanupOrphanedFiles => "孤立ファイルのクリーンアップ",
         I18nKey::Copyright => "© 2026 Lumen. 無断複写・転載を禁じます。",
         // Sort

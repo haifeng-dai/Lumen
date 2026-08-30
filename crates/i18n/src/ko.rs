@@ -188,6 +188,18 @@ pub fn translate(key: I18nKey) -> &'static str {
             "GPUI로 구축된 고성능 문헌 관리 앱입니다. 깔끔하고 부드러우며 강력한 학술 독서 및 연구 경험에 집중합니다."
         }
         I18nKey::BatchRename => "Batch Rename",
+        I18nKey::BatchRenameCompleted => "일괄 이름 변경 완료: 성공 {}개, 건너뜀 {}개",
+        I18nKey::BatchRenameCompletedWithFailures => {
+            "일괄 이름 변경 완료: 성공 {}개, 건너뜀 {}개, 실패 {}개. {}"
+        }
+        I18nKey::BatchRenameFailed => "일괄 이름 변경을 계속할 수 없습니다: {}",
+        I18nKey::BatchRenameSourceNotRegularFile => "원본 파일이 없거나 일반 파일이 아닙니다: {}",
+        I18nKey::BatchRenameSourceNameUnreadable => "원본 파일 이름을 읽을 수 없습니다",
+        I18nKey::BatchRenameTargetExists => "대상 파일이 이미 존재합니다: {}",
+        I18nKey::BatchRenameRenameFailed => "파일 이름 변경 실패: {}",
+        I18nKey::BatchRenameSaveFailed => {
+            "파일 이름은 변경되었지만 기록을 저장할 수 없어 계속할 수 없습니다: {}"
+        }
         I18nKey::CleanupOrphanedFiles => "Cleanup Orphaned Files",
         I18nKey::Copyright => "© 2026 Lumen. 모든 권리 보유.",
         // Sort

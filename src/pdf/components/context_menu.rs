@@ -163,21 +163,7 @@ impl PdfReaderView {
             }
             .into();
             menu = menu.item(
-                PopupMenuItem::element(move |_window, cx| {
-                    let accent_bg = cx.theme().tokens.accent;
-                    let accent_fg = cx.theme().tokens.accent_foreground;
-                    h_flex()
-                        .w_full()
-                        .px_2()
-                        .py_1()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .justify_center()
-                        .items_center()
-                        .hover(move |s| s.bg(accent_bg).text_color(accent_fg))
-                        .child(div().child(note_label.clone()))
-                })
-                .on_click(move |_, window, cx| {
+                PopupMenuItem::new(note_label).on_click(move |_, window, cx| {
                     if let Some(this) = weak_note.upgrade() {
                         this.update(cx, |this, cx| {
                             let id = aid_note.clone();
@@ -283,17 +269,7 @@ impl PdfReaderView {
             menu = menu.item(
                 PopupMenuItem::element(move |_window, cx| {
                     let danger = cx.theme().danger;
-                    h_flex()
-                        .w_full()
-                        .px_2()
-                        .py_1()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .justify_center()
-                        .items_center()
-                        .text_color(danger)
-                        .hover(move |s| s.bg(danger.opacity(0.12)))
-                        .child(div().child(delete_label.clone()))
+                    div().text_color(danger).child(delete_label.clone())
                 })
                 .on_click(move |_, _window, cx| {
                     if let Some(this) = weak_delete.upgrade() {
@@ -1046,31 +1022,19 @@ fn annotation_picker_items(
 
         let weak_translate = weak_self.clone();
         items.push(
-            PopupMenuItem::element(move |_window, cx| {
-                let accent_bg = cx.theme().tokens.accent;
-                let accent_fg = cx.theme().tokens.accent_foreground;
-                h_flex()
-                    .w_full()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .justify_center()
-                    .items_center()
-                    .hover(move |s| s.bg(accent_bg).text_color(accent_fg))
-                    .child(div().child(i18n::t(I18nKey::Translate, Default::default())))
-            })
-            .on_click(move |_, _window, cx| {
-                if let Some(this) = weak_translate.upgrade() {
-                    this.update(cx, |this, cx| {
-                        let Some(text) = this.selected_text.clone() else {
-                            return;
-                        };
+            PopupMenuItem::new(i18n::t(I18nKey::Translate, Default::default())).on_click(
+                move |_, _window, cx| {
+                    if let Some(this) = weak_translate.upgrade() {
+                        this.update(cx, |this, cx| {
+                            let Some(text) = this.selected_text.clone() else {
+                                return;
+                            };
 
-                        this.translate_text(text, true, cx);
-                    });
-                }
-            }),
+                            this.translate_text(text, true, cx);
+                        });
+                    }
+                },
+            ),
         );
     }
 

@@ -1,5 +1,6 @@
 use crate::app_state::config::ConfigStore;
 use crate::app_state::theme::{ThemeLoaderState, surface};
+use crate::ui::notification::{NotificationType, show_notification};
 use components::IconName;
 use components::{muted_input, selector};
 use gpui::prelude::*;
@@ -12,8 +13,11 @@ use gpui_component::{
     setting::{SettingGroup, SettingItem, SettingPage},
     v_flex,
 };
-use i18n::{I18nKey, Language, t};
-use services::{app::MainApp, utils::filename};
+use i18n::{I18nKey, Language, t, tf};
+use services::{
+    app::{BatchRenameFailureKind, BatchRenameSaveError, MainApp},
+    utils::filename,
+};
 use std::sync::Arc;
 
 use super::{
@@ -214,15 +218,92 @@ impl SettingsWindow {
                                             .w(rems(4.5))
                                             .on_click({
                                                 let app = app.clone();
+                                                let language = l;
                                                 move |_, _, cx| {
                                                     let app = app.clone();
-                                                    cx.spawn(move |_: &mut AsyncApp| {
+                                                    cx.spawn(move |async_cx: &mut AsyncApp| {
                                                         let app = app.clone();
+                                                        let async_cx = async_cx.clone();
                                                         async move {
-                                                            if let Err(e) = app.batch_rename_files()
-                                                            {
-                                                                log::error!("批量重命名失败: {e}");
-                                                            }
+                                                            let result = app.batch_rename_files();
+                                                            async_cx.update(|cx| match result {
+                                                                Ok(summary) if summary.failures.is_empty() => {
+                                                                    show_notification(
+                                                                        NotificationType::Success,
+                                                                        tf(
+                                                                            I18nKey::BatchRenameCompleted,
+                                                                            language,
+                                                                            &[&summary.success.to_string(), &summary.skipped.to_string()],
+                                                                        ),
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                                Ok(summary) => {
+                                                                    let details = summary
+                                                                        .failures
+                                                                        .iter()
+                                                                        .take(3)
+                                                                        .map(|failure| {
+                                                                            let reason = match &failure.kind {
+                                                                                BatchRenameFailureKind::SourceNotRegularFile { path } => tf(
+                                                                                    I18nKey::BatchRenameSourceNotRegularFile,
+                                                                                    language,
+                                                                                    &[path],
+                                                                                ),
+                                                                                BatchRenameFailureKind::SourceNameUnreadable => t(
+                                                                                    I18nKey::BatchRenameSourceNameUnreadable,
+                                                                                    language,
+                                                                                ).to_string(),
+                                                                                BatchRenameFailureKind::TargetExists { path } => tf(
+                                                                                    I18nKey::BatchRenameTargetExists,
+                                                                                    language,
+                                                                                    &[path],
+                                                                                ),
+                                                                                BatchRenameFailureKind::RenameFailed { error } => tf(
+                                                                                    I18nKey::BatchRenameRenameFailed,
+                                                                                    language,
+                                                                                    &[error],
+                                                                                ),
+                                                                            };
+                                                                            format!("{}: {}", failure.attachment_id, reason)
+                                                                        })
+                                                                        .collect::<Vec<_>>()
+                                                                        .join("; ");
+                                                                    show_notification(
+                                                                        NotificationType::Error,
+                                                                        tf(
+                                                                            I18nKey::BatchRenameCompletedWithFailures,
+                                                                            language,
+                                                                            &[
+                                                                                &summary.success.to_string(),
+                                                                                &summary.skipped.to_string(),
+                                                                                &summary.failures.len().to_string(),
+                                                                                &details,
+                                                                            ],
+                                                                        ),
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                                Err(error) => {
+                                                                    let message = if let Some(save_error) =
+                                                                        error.downcast_ref::<BatchRenameSaveError>()
+                                                                    {
+                                                                        tf(
+                                                                            I18nKey::BatchRenameSaveFailed,
+                                                                            language,
+                                                                            &[&save_error.detail],
+                                                                        )
+                                                                    } else {
+                                                                        let detail = error.to_string();
+                                                                        tf(I18nKey::BatchRenameFailed, language, &[&detail])
+                                                                    };
+                                                                    show_notification(
+                                                                        NotificationType::Error,
+                                                                        message,
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                            });
                                                         }
                                                     })
                                                     .detach();
