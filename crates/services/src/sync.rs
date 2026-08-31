@@ -1,7 +1,7 @@
 //! 同步编排域（sync）—— 独立模块，只调用核心
 //!
 //! - `engine`：自动同步循环与上传/元数据/下载三段式编排（`SyncService`）
-//! - `metadata`：本地 DB <-> 云 MySQL（`SQLSyncService`，收 `database/mysql` 的 push/pull）
+//! - `database_sync`：本地 DB <-> 云 MySQL 的阶段化同步编排
 //! - `attachments`：本地文件 <-> 云文件（`FileSyncService`，收 `crates/file` 的 backend）
 //! - `progress`：跨线程共享的同步状态类型（`SyncStateInner` / `SyncStatus`）
 //!
@@ -13,12 +13,9 @@
 //! 核心不反向依赖本模块。
 
 pub(crate) mod attachments;
-mod conflict;
 mod engine;
 pub(crate) mod error;
-pub(crate) mod metadata;
 pub(crate) mod progress;
-pub(crate) mod remote;
 
 pub use engine::SyncService;
-pub use progress::{SyncStateInner, SyncStatus};
+pub use progress::{DatabaseSyncStatus, SyncStateInner, SyncStatus};

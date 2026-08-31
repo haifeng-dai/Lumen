@@ -10,6 +10,7 @@
 pub mod analysis;
 pub mod app;
 pub mod config;
+pub mod database_sync;
 pub mod feed;
 pub mod file_monitor;
 pub mod library;

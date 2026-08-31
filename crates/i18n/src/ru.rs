@@ -220,6 +220,19 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Синхронизировать метаданные",
         I18nKey::SyncAttachments => "Синхронизировать вложения",
+        I18nKey::DatabaseSyncInProgress => {
+            "Синхронизация базы данных обновляется; синхронизация файлов доступна"
+        }
+        I18nKey::DatabaseSyncNeedsInitialization => "Требуется инициализация синхронизации",
+        I18nKey::DatabaseSyncNeedsAdoption => "Требуется принять удалённую базу",
+        I18nKey::DatabaseSyncIdentityMismatch => "Идентификатор библиотеки не совпадает",
+        I18nKey::DatabaseSyncConflict => "Конфликты синхронизации базы данных",
+        I18nKey::DatabaseSyncPartialFailure => "Частичная ошибка синхронизации",
+        I18nKey::DatabaseSyncError => "Ошибка синхронизации базы данных",
+        I18nKey::DatabaseSyncUploaded => "Загружено",
+        I18nKey::DatabaseSyncDownloaded => "Скачано",
+        I18nKey::DatabaseSyncConflictsCount => "Конфликты",
+        I18nKey::DatabaseSyncFailuresCount => "Ошибки",
         I18nKey::TestConnection => "Проверить соединение",
         I18nKey::WebDavSettings => "Настройки WebDAV",
         I18nKey::EnableWebDav => "Включить WebDAV",

@@ -220,6 +220,19 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "メタデータを同期",
         I18nKey::SyncAttachments => "添付ファイルを同期",
+        I18nKey::DatabaseSyncInProgress => {
+            "データベース同期をアップグレード中です。ファイル同期は利用できます"
+        }
+        I18nKey::DatabaseSyncNeedsInitialization => "データベース同期の初期化が必要です",
+        I18nKey::DatabaseSyncNeedsAdoption => "リモートデータベースの採用が必要です",
+        I18nKey::DatabaseSyncIdentityMismatch => "データベースの識別子が一致しません",
+        I18nKey::DatabaseSyncConflict => "データベース同期に競合があります",
+        I18nKey::DatabaseSyncPartialFailure => "データベース同期が一部失敗しました",
+        I18nKey::DatabaseSyncError => "データベース同期エラー",
+        I18nKey::DatabaseSyncUploaded => "アップロード済み",
+        I18nKey::DatabaseSyncDownloaded => "ダウンロード済み",
+        I18nKey::DatabaseSyncConflictsCount => "競合",
+        I18nKey::DatabaseSyncFailuresCount => "失敗",
         I18nKey::TestConnection => "接続テスト",
         I18nKey::WebDavSettings => "WebDAV 設定",
         I18nKey::EnableWebDav => "WebDAV を有効にする",

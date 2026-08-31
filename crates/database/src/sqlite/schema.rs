@@ -1,12 +1,29 @@
 use log::debug;
-use rusqlite::{Result, params};
+use rusqlite::{OptionalExtension, Result, params};
 
 use super::Database;
+
+const SYNC_RECORD_TABLES: &[&str] = &[
+    "literatures",
+    "publications",
+    "authors",
+    "literature_authors",
+    "folders",
+    "literature_folders",
+    "tags",
+    "literature_tags",
+    "attachments",
+    "feeds",
+    "feed_items",
+    "literature_citations",
+    "annotations",
+    "literature_notes",
+];
 
 impl Database {
     pub(super) fn init_tables(&self) -> Result<()> {
         debug!("正在初始化数据库表结构...");
-        self.with_conn(|conn| {
+        let added_sync_columns = self.with_conn(|conn| {
             // 1. 文献主表
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS literatures (
@@ -302,6 +319,77 @@ impl Database {
                 [],
             )?;
 
+            // 新数据库同步使用云端版本，而不是现有的本地 `version`。
+            // 这里同时处理新库和历史库：SQLite 无法为 ALTER TABLE 使用
+            // `IF NOT EXISTS`，因此先查询实际列再补齐。
+            let mut added_sync_columns = false;
+            for table in SYNC_RECORD_TABLES {
+                let has_synced_version: bool = conn
+                    .query_row(
+                        &format!(
+                            "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'synced_version'"
+                        ),
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map(|count| count > 0)?;
+                if !has_synced_version {
+                    conn.execute(
+                        &format!("ALTER TABLE {table} ADD COLUMN synced_version INTEGER NOT NULL DEFAULT 0"),
+                        [],
+                    )?;
+                    added_sync_columns = true;
+                }
+            }
+
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS sync_conflicts (
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    local_record TEXT NOT NULL,
+                    remote_record TEXT NOT NULL,
+                    remote_version INTEGER NOT NULL,
+                    detected_at INTEGER NOT NULL,
+                    PRIMARY KEY (entity_type, entity_id)
+                )",
+                [],
+            )?;
+
+            Ok(added_sync_columns)
+        })?;
+
+        // The marker distinguishes a pre-stage-1 database (which needs a
+        // conservative dirty migration) from a database that already has the
+        // new columns and may contain successfully synchronized records.
+        // Run the data change in one transaction so a failed startup cannot
+        // leave a partially migrated set of entities.
+        self.migrate_legacy_sync_state(added_sync_columns)
+    }
+
+    fn migrate_legacy_sync_state(&self, added_sync_columns: bool) -> Result<()> {
+        const MARKER: &str = "database_sync_state_migrated_v1";
+        self.with_transaction(|tx| {
+            let already_migrated: Option<String> = tx
+                .query_row(
+                    "SELECT value FROM sync_meta WHERE key = ?1",
+                    [MARKER],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if already_migrated.is_none() {
+                if added_sync_columns {
+                    for table in SYNC_RECORD_TABLES {
+                        tx.execute(
+                            &format!("UPDATE {table} SET is_dirty = 1, synced_version = 0"),
+                            [],
+                        )?;
+                    }
+                }
+                tx.execute(
+                    "INSERT INTO sync_meta (key, value) VALUES (?1, '1')",
+                    [MARKER],
+                )?;
+            }
             Ok(())
         })
     }
@@ -364,6 +452,66 @@ impl Database {
             "literature_citations",
             "annotations",
             "literature_notes",
+            "sync_conflicts",
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Database;
+    use crate::{SyncEntityKey, SyncEntityType};
+
+    #[test]
+    fn legacy_sync_migration_marks_existing_rows_dirty_once() {
+        let db = Database::new(":memory:").unwrap();
+        let tag = db.create_tag("legacy", Some("#123456".into())).unwrap();
+        let tombstone = db.create_tag("removed", None).unwrap();
+        db.delete_tag(&tombstone.id).unwrap();
+        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 11)
+            .unwrap();
+        db.with_conn(|conn| {
+            conn.execute(
+                "DELETE FROM sync_meta WHERE key = 'database_sync_state_migrated_v1'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // This is the production path's "a legacy table lacked the column"
+        // branch, exercised against a populated clean row and tombstone.
+        db.migrate_legacy_sync_state(true).unwrap();
+        let state = db
+            .get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()))
+            .unwrap();
+        assert_eq!(state, Some((0, true)));
+        let value = db
+            .get_all_tags_with_counts()
+            .unwrap()
+            .into_iter()
+            .find(|(value, _)| value.id == tag.id)
+            .unwrap()
+            .0;
+        assert_eq!(value.name, "legacy");
+        assert_eq!(value.color, "#123456");
+        assert_eq!(
+            db.get_download_state(
+                SyncEntityType::Tag,
+                &SyncEntityKey::Id(tombstone.id.clone())
+            )
+            .unwrap(),
+            Some((0, true))
+        );
+
+        db.migrate_legacy_sync_state(false).unwrap();
+        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 12)
+            .unwrap();
+        db.migrate_legacy_sync_state(false).unwrap();
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id))
+                .unwrap(),
+            Some((12, false))
+        );
     }
 }

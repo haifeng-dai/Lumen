@@ -671,9 +671,7 @@ impl SettingsWindow {
                                         move |_, _, cx| {
                                             let app = app.clone();
                                             cx.spawn(move |_: &mut AsyncApp| async move {
-                                                if let Err(e) =
-                                                    app.sync_service.clear_remote_database().await
-                                                {
+                                                if let Err(e) = app.clear_remote_database().await {
                                                     error!("清空云端数据库失败: {e}");
                                                 }
                                             })
@@ -691,9 +689,7 @@ impl SettingsWindow {
                                         move |_, _, cx| {
                                             let app = app.clone();
                                             cx.spawn(move |_: &mut AsyncApp| async move {
-                                                if let Err(e) =
-                                                    app.sync_service.clear_remote_files().await
-                                                {
+                                                if let Err(e) = app.clear_remote_files().await {
                                                     error!("清空云端文件失败: {e}");
                                                 }
                                             })

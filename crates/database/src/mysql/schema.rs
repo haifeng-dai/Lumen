@@ -1,10 +1,12 @@
 use super::MySqlManager;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use log::{error, info};
 use mysql_async::prelude::*;
 
 pub async fn ensure_remote_tables(conn: &mut mysql_async::Conn) -> Result<()> {
     let create_tables = [
+        "CREATE TABLE IF NOT EXISTS library_info (singleton TINYINT NOT NULL DEFAULT 1, library_id VARCHAR(64) NOT NULL, schema_version INT NOT NULL DEFAULT 1, created_at BIGINT NOT NULL, PRIMARY KEY (singleton), UNIQUE KEY uq_library_info_id (library_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+        "CREATE TABLE IF NOT EXISTS sync_changes (sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, entity_type VARCHAR(64) NOT NULL, entity_id VARCHAR(255) NOT NULL, version INT NOT NULL, PRIMARY KEY (sequence), INDEX idx_sync_changes_entity (entity_type, entity_id), INDEX idx_sync_changes_sequence (sequence)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         "CREATE TABLE IF NOT EXISTS literatures (id VARCHAR(64) PRIMARY KEY, title TEXT NOT NULL, year INT, month INT, day INT, type TEXT NOT NULL, publication_id VARCHAR(64), volume TEXT, issue TEXT, pages TEXT, abstract_text MEDIUMTEXT, doi TEXT, arxiv_id TEXT, url TEXT, rating INT DEFAULT 0, reading_status TEXT, is_deleted BOOLEAN DEFAULT 0, version INT DEFAULT 1, created_at BIGINT NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         "CREATE TABLE IF NOT EXISTS publications (id VARCHAR(64) PRIMARY KEY, name TEXT NOT NULL, publication_type TEXT NOT NULL, abbreviation TEXT, publisher TEXT, ccf_rank TEXT, jcr_rank TEXT, cas_rank TEXT, is_deleted BOOLEAN DEFAULT 0, version INT DEFAULT 1, created_at BIGINT NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         "CREATE TABLE IF NOT EXISTS authors (id VARCHAR(64) PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, middle_name TEXT, is_deleted BOOLEAN DEFAULT 0, version INT DEFAULT 1, created_at BIGINT NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
@@ -22,6 +24,19 @@ pub async fn ensure_remote_tables(conn: &mut mysql_async::Conn) -> Result<()> {
     ];
     for sql in create_tables {
         conn.query_drop(sql).await?;
+    }
+
+    let column: Option<(String, Option<u64>)> = conn
+        .exec_first(
+            "SELECT data_type, character_maximum_length FROM information_schema.columns
+             WHERE table_schema = DATABASE() AND table_name = 'sync_changes' AND column_name = 'entity_id'",
+            (),
+        )
+        .await?;
+    let (data_type, length) = column.ok_or_else(|| anyhow!("sync_changes.entity_id is missing"))?;
+    if !data_type.eq_ignore_ascii_case("varchar") || length.unwrap_or(0) < 255 {
+        conn.query_drop("ALTER TABLE sync_changes MODIFY COLUMN entity_id VARCHAR(255) NOT NULL")
+            .await?;
     }
 
     let indexes = [

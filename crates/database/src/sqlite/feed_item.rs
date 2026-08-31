@@ -2,7 +2,7 @@ use super::Database;
 use log::{debug, info, warn};
 use models::FeedItem;
 use models::constructors::*;
-use rusqlite::{OptionalExtension, Result, params};
+use rusqlite::{Result, params};
 use serde_json;
 
 impl Database {
@@ -313,18 +313,6 @@ impl Database {
                 warn!("数据库: 标记订阅条目同步失败，未找到 ID 为 {id} 的记录");
             }
             Ok(())
-        })
-    }
-
-    /// 读取订阅条目本地同步状态 `(version, is_dirty)`。
-    pub fn get_feed_item_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM feed_items WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
         })
     }
 

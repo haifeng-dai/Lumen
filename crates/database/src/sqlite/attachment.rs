@@ -293,18 +293,6 @@ impl Database {
         })
     }
 
-    /// 读取附件本地同步状态 `(version, is_dirty)`。
-    pub fn get_attachment_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM attachments WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-        })
-    }
-
     /// 原子原语：把远程附件盲目 upsert 到本地（覆盖写）。
     pub fn apply_remote_attachment(&self, remote: &Attachment) -> Result<()> {
         self.with_conn(|conn| self.insert_attachment_internal(conn, remote))

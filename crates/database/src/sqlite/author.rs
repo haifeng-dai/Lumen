@@ -51,18 +51,6 @@ impl Database {
         })
     }
 
-    /// 读取作者本地同步状态 `(version, is_dirty)`。
-    pub fn get_author_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM authors WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-        })
-    }
-
     /// 原子原语：把远程作者盲目 upsert 到本地（覆盖写或插入）。
     pub fn apply_remote_author(&self, remote: &Author) -> Result<()> {
         self.with_conn(|conn| Self::insert_author_internal(conn, remote))

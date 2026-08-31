@@ -239,9 +239,6 @@ impl Render for MainWindow {
                     cx.notify();
                 },
             ))
-            .on_action(cx.listener(|this, _: &HandleSyncConflicts, window, cx| {
-                this.handle_sync_conflicts(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &Cancel, _, cx| {
                 this.loading_modal = None;
                 this.context_menu = None;

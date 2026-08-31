@@ -35,10 +35,7 @@ pub use types::ViewEvent;
 const SIDEBAR_MIN_RATIO: f32 = 0.10;
 const SIDEBAR_MAX_RATIO: f32 = 0.35;
 
-actions!(
-    main_window,
-    [Cancel, ShowAbout, ShowSettings, HandleSyncConflicts]
-);
+actions!(main_window, [Cancel, ShowAbout, ShowSettings]);
 
 impl EventEmitter<ViewEvent> for MainWindow {}
 impl EventEmitter<ViewEvent> for FolderSelector {}

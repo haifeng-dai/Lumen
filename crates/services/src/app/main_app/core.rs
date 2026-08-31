@@ -1,10 +1,12 @@
 use crate::analysis::CCFService;
+use crate::database_sync::{IdentityDecision, IdentityPlan};
 use crate::feed::FeedService;
 use crate::feed::FetcherService;
 use crate::library::{AttachmentService, FolderService, LiteratureService, TagService};
 use crate::sync::SyncService;
 use crate::sync::SyncStateInner;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use database::DatabaseSyncSummary;
 use i18n::Language;
 use log::{debug, info};
 use models::config::AppConfig;
@@ -71,7 +73,6 @@ impl MainApp {
                 }
             })
         };
-
         let sync_state: Arc<Mutex<SyncStateInner>> = Arc::new(Mutex::new(SyncStateInner::new()));
 
         let (sync_service, sync_rx) = SyncService::new(
@@ -80,8 +81,8 @@ impl MainApp {
             &backend_config_json,
             on_demand,
             sync_state.clone(),
-            notify_data,
             notify_ui,
+            notify_data,
         )
         .expect("Failed to initialize sync_service");
         let sync_service = Arc::new(sync_service);
@@ -224,10 +225,89 @@ impl MainApp {
     }
 
     pub async fn test_mysql_config(&self, config: models::DatabaseConfig) -> Result<(), String> {
-        self.sync_service
-            .test_mysql_config(config)
+        let sync_service = self.sync_service.clone();
+        crate::runtime::RUNTIME
+            .spawn(async move { sync_service.test_mysql_config(config).await })
             .await
+            .map_err(|e| format!("MySQL 测试任务失败: {e}"))?
             .map_err(|e| e.to_string())
+    }
+
+    /// Database-sync facade for UI callers. The UI never reaches database or
+    /// MySQL primitives directly.
+    pub async fn database_sync_preflight(&self) -> Result<IdentityDecision> {
+        let sync_service = self.sync_service.clone();
+        crate::runtime::RUNTIME
+            .spawn(async move { sync_service.database_sync_preflight().await })
+            .await
+            .map_err(|e| anyhow!("数据库同步预检任务失败: {e}"))?
+    }
+
+    pub async fn confirm_remote_initialization(&self) -> Result<IdentityPlan> {
+        let sync_service = self.sync_service.clone();
+        let plan = crate::runtime::RUNTIME
+            .spawn(async move { sync_service.confirm_remote_initialization().await })
+            .await
+            .map_err(|e| anyhow!("远程数据库初始化任务失败: {e}"))??;
+        self.notify_data_changed();
+        self.notify_ui_changed();
+        Ok(plan)
+    }
+
+    pub async fn confirm_remote_adoption(&self) -> Result<IdentityPlan> {
+        let sync_service = self.sync_service.clone();
+        let plan = crate::runtime::RUNTIME
+            .spawn(async move { sync_service.confirm_remote_adoption().await })
+            .await
+            .map_err(|e| anyhow!("远程数据库接管任务失败: {e}"))??;
+        self.notify_data_changed();
+        self.notify_ui_changed();
+        Ok(plan)
+    }
+
+    pub async fn clear_remote_database(&self) -> Result<()> {
+        let sync_service = self.sync_service.clone();
+        crate::runtime::RUNTIME
+            .spawn(async move { sync_service.clear_remote_database().await })
+            .await
+            .map_err(|e| anyhow!("清空远程数据库任务失败: {e}"))??;
+        self.notify_data_changed();
+        self.notify_ui_changed();
+        Ok(())
+    }
+
+    pub async fn clear_remote_files(&self) -> Result<()> {
+        let sync_service = self.sync_service.clone();
+        crate::runtime::RUNTIME
+            .spawn(async move { sync_service.clear_remote_files().await })
+            .await
+            .map_err(|e| anyhow!("清空远程文件任务失败: {e}"))??;
+        self.notify_ui_changed();
+        Ok(())
+    }
+
+    pub fn list_database_sync_conflicts(
+        &self,
+    ) -> Result<Vec<crate::database_sync::UiDatabaseSyncConflict>> {
+        self.sync_service.list_database_sync_conflicts()
+    }
+
+    pub fn choose_remote_database_conflict(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<()> {
+        self.sync_service
+            .choose_remote_database_conflict(entity_type, entity_id)
+    }
+
+    pub fn keep_local_database_conflict(&self, entity_type: &str, entity_id: &str) -> Result<()> {
+        self.sync_service
+            .keep_local_database_conflict(entity_type, entity_id)
+    }
+
+    pub fn database_sync_summary(&self) -> Result<Option<DatabaseSyncSummary>> {
+        self.sync_service.database_sync_summary()
     }
 
     /// 内部助手：消除“操作 -> 通知 -> 返回”模板代码

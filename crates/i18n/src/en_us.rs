@@ -216,6 +216,19 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Sync Metadata",
         I18nKey::SyncAttachments => "Sync Attachments",
+        I18nKey::DatabaseSyncInProgress => {
+            "Database sync is being upgraded; file sync remains available"
+        }
+        I18nKey::DatabaseSyncNeedsInitialization => "Database sync needs initialization",
+        I18nKey::DatabaseSyncNeedsAdoption => "Database sync needs remote adoption",
+        I18nKey::DatabaseSyncIdentityMismatch => "Database library identity mismatch",
+        I18nKey::DatabaseSyncConflict => "Database sync has conflicts",
+        I18nKey::DatabaseSyncPartialFailure => "Database sync partially failed",
+        I18nKey::DatabaseSyncError => "Database sync error",
+        I18nKey::DatabaseSyncUploaded => "Uploaded",
+        I18nKey::DatabaseSyncDownloaded => "Downloaded",
+        I18nKey::DatabaseSyncConflictsCount => "Conflicts",
+        I18nKey::DatabaseSyncFailuresCount => "Failures",
         I18nKey::TestConnection => "Test Connection",
         I18nKey::WebDavSettings => "WebDAV Settings",
         I18nKey::EnableWebDav => "Enable WebDAV",

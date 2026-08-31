@@ -1,7 +1,7 @@
 use super::Database;
 use log::{debug, info};
 use models::{Publication, PublicationType};
-use rusqlite::{OptionalExtension, Result, params};
+use rusqlite::{Result, params};
 
 impl Database {
     pub fn get_dirty_publications(&self) -> Result<Vec<Publication>> {
@@ -43,18 +43,6 @@ impl Database {
         self.with_conn(|conn| {
             conn.execute("UPDATE publications SET is_dirty = 0 WHERE id = ?1", [id])?;
             Ok(())
-        })
-    }
-
-    /// 读取出版源本地同步状态 `(version, is_dirty)`。
-    pub fn get_publication_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM publications WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
         })
     }
 

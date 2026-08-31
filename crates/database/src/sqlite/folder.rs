@@ -1,7 +1,7 @@
 use super::Database;
 use log::{debug, info, warn};
 use models::{Folder, FolderType};
-use rusqlite::{Connection, OptionalExtension, Result, Row, params};
+use rusqlite::{Connection, Result, Row, params};
 use serde_json;
 
 impl Database {
@@ -150,18 +150,6 @@ impl Database {
                 warn!("数据库: 标记文件夹同步失败，未找到 ID 为 {id} 的记录");
             }
             Ok(())
-        })
-    }
-
-    /// 读取文件夹本地同步状态 `(version, is_dirty)`。
-    pub fn get_folder_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM folders WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
         })
     }
 

@@ -1,13 +1,14 @@
-mod queries;
-mod records;
 mod rows;
 mod schema;
+mod sync;
 
-pub use queries::MySqlSyncReader;
-pub use records::MySqlSyncWriter;
 pub use rows::{
     AttachmentRow, AuthorRow, FeedItemRow, FeedRow, FolderRow, LiteratureRow, PublicationRow,
     TagRow,
+};
+pub use sync::{
+    RelationAuthor, RelationFolder, RelationTag, RemoteAnnotationPayload, RemoteChange,
+    RemoteLibraryInfo, SyncEntityPayload, SyncEntityType, VersionedWriteResult,
 };
 
 use anyhow::{Result, anyhow};

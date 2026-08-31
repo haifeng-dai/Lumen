@@ -218,6 +218,21 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Metadaten synchronisieren",
         I18nKey::SyncAttachments => "Anhänge synchronisieren",
+        I18nKey::DatabaseSyncInProgress => {
+            "Datenbanksynchronisierung wird aktualisiert; Dateisynchronisierung bleibt verfügbar"
+        }
+        I18nKey::DatabaseSyncNeedsInitialization => {
+            "Datenbanksynchronisierung muss initialisiert werden"
+        }
+        I18nKey::DatabaseSyncNeedsAdoption => "Datenbanksynchronisierung muss übernommen werden",
+        I18nKey::DatabaseSyncIdentityMismatch => "Datenbankidentität stimmt nicht überein",
+        I18nKey::DatabaseSyncConflict => "Konflikte bei der Datenbanksynchronisierung",
+        I18nKey::DatabaseSyncPartialFailure => "Datenbanksynchronisierung teilweise fehlgeschlagen",
+        I18nKey::DatabaseSyncError => "Fehler bei der Datenbanksynchronisierung",
+        I18nKey::DatabaseSyncUploaded => "Hochgeladen",
+        I18nKey::DatabaseSyncDownloaded => "Heruntergeladen",
+        I18nKey::DatabaseSyncConflictsCount => "Konflikte",
+        I18nKey::DatabaseSyncFailuresCount => "Fehler",
         I18nKey::TestConnection => "Verbindung testen",
         I18nKey::WebDavSettings => "WebDAV Einstellungen",
         I18nKey::EnableWebDav => "WebDAV aktivieren",

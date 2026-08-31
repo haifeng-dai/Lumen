@@ -47,41 +47,6 @@ impl Database {
             Ok(())
         })
     }
-    pub fn get_last_sync_time(&self, table: &str) -> Result<Option<String>> {
-        self.get_sync_meta(&format!("last_sync_{table}"))
-    }
-    pub fn set_last_sync_time(&self, table: &str, time: &str) -> Result<()> {
-        self.set_sync_meta(&format!("last_sync_{table}"), time)
-    }
-    pub fn mark_all_dirty_for_sync(&self) -> Result<()> {
-        self.with_conn(|conn| {
-            let tables = [
-                "literatures",
-                "authors",
-                "folders",
-                "tags",
-                "literature_authors",
-                "literature_folders",
-                "literature_tags",
-                "attachments",
-                "feeds",
-                "feed_items",
-                "literature_citations",
-                "annotations",
-                "literature_notes",
-            ];
-            for table in tables {
-                conn.execute(&format!("UPDATE {table} SET is_dirty = 1"), [])?;
-            }
-            Ok(())
-        })
-    }
-    pub fn clear_sync_timestamps(&self) -> Result<()> {
-        self.with_conn(|conn| {
-            conn.execute("DELETE FROM sync_meta WHERE key LIKE 'last_sync_%'", [])?;
-            Ok(())
-        })
-    }
     pub fn clear_attachment_etags(&self) -> Result<()> {
         self.with_conn(|conn| {
             conn.execute("UPDATE attachments SET etag = NULL", [])?;

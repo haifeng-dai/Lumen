@@ -7,7 +7,7 @@ use crate::ui::{
 };
 use components::IconName;
 use gpui::prelude::*;
-use services::sync::SyncStatus;
+use services::sync::{DatabaseSyncStatus, SyncStatus};
 use std::ops::Range;
 
 use gpui::{
@@ -33,11 +33,11 @@ impl Render for LiteraturePanel {
         let ui = cx.global::<crate::app_state::ui::UiState>();
         let (sync_status, attachment_sync_status) = if let Ok(state) = self.app.sync_state.lock() {
             (
-                state.sync_status.clone(),
+                state.database_sync_status.clone(),
                 state.attachment_sync_status.clone(),
             )
         } else {
-            (SyncStatus::Idle, SyncStatus::Idle)
+            (DatabaseSyncStatus::Idle, SyncStatus::Idle)
         };
         let (folders, mut tags) = {
             let ds = self.data_store.read(cx);
@@ -61,6 +61,18 @@ impl Render for LiteraturePanel {
         let (selected_folder_id, selected_tag_id) =
             (ui.selected_folder_id.clone(), ui.selected_tag_id.clone());
         let lang = self.app.current_language();
+        let database_sync_tooltip = match &sync_status {
+            DatabaseSyncStatus::Idle => None,
+            DatabaseSyncStatus::Syncing => Some(I18nKey::DatabaseSyncInProgress),
+            DatabaseSyncStatus::NeedsRemoteInitialization => {
+                Some(I18nKey::DatabaseSyncNeedsInitialization)
+            }
+            DatabaseSyncStatus::NeedsRemoteAdoption => Some(I18nKey::DatabaseSyncNeedsAdoption),
+            DatabaseSyncStatus::IdentityMismatch => Some(I18nKey::DatabaseSyncIdentityMismatch),
+            DatabaseSyncStatus::Conflict => Some(I18nKey::DatabaseSyncConflict),
+            DatabaseSyncStatus::PartialFailure => Some(I18nKey::DatabaseSyncPartialFailure),
+            DatabaseSyncStatus::Error(_) => Some(I18nKey::DatabaseSyncError),
+        };
 
         // 按名称排序标签
         tags.sort_by_key(|a| a.0.name.to_lowercase());
@@ -796,59 +808,48 @@ impl Render for LiteraturePanel {
                     .border_color(surface.border_faint)
                     .child({
                         let icon = match &sync_status {
-                            SyncStatus::Idle => Icon::new(IconName::Check)
+                            DatabaseSyncStatus::Idle => Icon::new(IconName::Check)
                                 .small()
                                 .text_color(theme.muted_foreground),
-                            SyncStatus::Syncing => Icon::new(IconName::LoaderCircle)
+                            DatabaseSyncStatus::Syncing => Icon::new(IconName::LoaderCircle)
                                 .small()
                                 .text_color(theme.primary),
-                            SyncStatus::Error(_) => {
-                                Icon::new(IconName::CircleX).small().text_color(theme.red_light)
-                            }
-                            SyncStatus::Conflict(_) => Icon::new(IconName::TriangleAlert)
+                            DatabaseSyncStatus::NeedsRemoteInitialization
+                            | DatabaseSyncStatus::NeedsRemoteAdoption
+                            | DatabaseSyncStatus::IdentityMismatch
+                            | DatabaseSyncStatus::Conflict
+                            | DatabaseSyncStatus::PartialFailure => Icon::new(IconName::TriangleAlert)
                                 .small()
                                 .text_color(theme.warning),
+                            DatabaseSyncStatus::Error(_) => {
+                                Icon::new(IconName::CircleX).small().text_color(theme.red_light)
+                            }
                         };
                         div().relative().child(
                             Button::new("btn-sync-status")
                                 .child(icon)
                                 .ghost()
                                 .xsmall()
+                                .when_some(database_sync_tooltip, |this, key| {
+                                    this.tooltip(t(key, lang))
+                                })
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     match &sync_status {
-                                        SyncStatus::Idle | SyncStatus::Error(_) => {
+                                        DatabaseSyncStatus::Idle | DatabaseSyncStatus::Error(_) => {
                                             // 点击时直接触发重试，不显示旧的错误信息
                                             let app = this.app.clone();
                                             RUNTIME.spawn(async move {
                                                 app.sync_service.force_sync().await;
                                             });
                                         }
-                                        SyncStatus::Conflict(lits) => {
-                                            // 获取本地对应的文献，构成对比组
-                                            let mut groups = Vec::new();
-                                            {
-                                                    for remote_lit in lits {
-                                                    if let Ok(Some(local_lit)) =
-                                                        this.app.db.get_literature(&remote_lit.id)
-                                                    {
-                                                        groups.push(vec![
-                                                            local_lit,
-                                                            remote_lit.clone(),
-                                                        ]);
-                                                    } else {
-                                                        groups.push(vec![remote_lit.clone()]);
-                                                    }
-                                                }
+                                        status => {
+                                            let parent = this.parent_view.clone();
+                                            if let Some(parent) = parent.upgrade() {
+                                                let _ = parent.update(cx, |window, cx| {
+                                                    window.open_database_sync_action(status.clone(), cx);
+                                                });
                                             }
-                                            if let Ok(mut state) = this.app.sync_state.lock() {
-                                                state.sync_conflict_groups = Some(groups);
-                                            }
-                                            // 发射 Action 让 MainWindow 捕获并打开冲突列表
-                                            cx.dispatch_action(
-                                                &crate::ui::views::main_window::HandleSyncConflicts,
-                                            );
                                         }
-                                        SyncStatus::Syncing => {}
                                     }
                                     cx.notify();
                                 })),

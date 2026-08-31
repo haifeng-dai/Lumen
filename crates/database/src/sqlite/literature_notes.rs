@@ -1,7 +1,7 @@
 use super::Database;
 use log::debug;
 use models::LiteratureNote;
-use rusqlite::{OptionalExtension, Result, params};
+use rusqlite::{Result, params};
 use uuid::Uuid;
 
 impl Database {
@@ -160,18 +160,6 @@ impl Database {
                 [id],
             )?;
             Ok(())
-        })
-    }
-
-    /// 读取笔记本地同步状态 `(version, is_dirty)`。
-    pub fn get_note_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM literature_notes WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
         })
     }
 

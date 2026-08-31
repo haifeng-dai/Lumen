@@ -17,6 +17,12 @@ mod tag;
 
 mod meta;
 mod schema;
+mod sync_state;
+
+pub use sync_state::{
+    DatabaseSyncSummary, LocalSyncState, SyncConflict, SyncEntityKey, SyncEntityType,
+    canonical_key, decode_relation_key,
+};
 /// 数据库管理器
 pub struct Database {
     /// 使用 Mutex 确保 Connection 在多线程环境下是 Sync 的

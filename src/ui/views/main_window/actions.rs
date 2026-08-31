@@ -1,3 +1,4 @@
+mod database_sync;
 mod editors;
 mod merge;
 mod metadata;

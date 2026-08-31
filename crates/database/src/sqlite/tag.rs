@@ -341,25 +341,6 @@ impl Database {
         })
     }
 
-    pub fn mark_tag_clean(&self, id: &str) -> Result<()> {
-        self.with_conn(|conn| {
-            conn.execute("UPDATE tags SET is_dirty = 0 WHERE id = ?1", [id])?;
-            Ok(())
-        })
-    }
-
-    /// 读取标签本地同步状态 `(version, is_dirty)`。
-    pub fn get_tag_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM tags WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-        })
-    }
-
     /// 原子原语：把远程标签盲目 upsert 到本地（覆盖写）。
     pub fn apply_remote_tag(&self, remote: &Tag) -> Result<()> {
         self.with_conn(|conn| self.insert_tag_internal(conn, remote))

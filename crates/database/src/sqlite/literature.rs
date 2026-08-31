@@ -482,18 +482,6 @@ impl Database {
         })
     }
 
-    /// 读取文献本地同步状态 `(version, is_dirty)`。
-    pub fn get_literature_sync_state(&self, id: &str) -> Result<Option<(i32, bool)>> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "SELECT version, is_dirty FROM literatures WHERE id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-        })
-    }
-
     /// 原子原语：把远程文献盲目 upsert 到本地（覆盖写）。
     pub fn apply_remote_literature(&self, remote: &Literature) -> Result<()> {
         self.with_conn(|conn| self.insert_literature_internal(conn, remote))
@@ -1045,30 +1033,6 @@ impl Database {
                 debug!("数据库: 关联关系标记同步成功");
             }
             Ok(())
-        })
-    }
-
-    /// 读取文献关联本地同步状态 `(version, is_dirty)`。
-    pub fn get_relation_sync_state(
-        &self,
-        table: &str,
-        lit_id: &str,
-        target_id: &str,
-    ) -> Result<Option<(i32, bool)>> {
-        let id_col = match table {
-            "literature_authors" => "author_id",
-            "literature_folders" => "folder_id",
-            "literature_tags" => "tag_id",
-            _ => return Err(rusqlite::Error::InvalidQuery),
-        };
-        self.with_conn(|conn| {
-            let sql = format!(
-                "SELECT version, is_dirty FROM {table} WHERE literature_id = ?1 AND {id_col} = ?2"
-            );
-            conn.query_row(&sql, [lit_id, target_id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .optional()
         })
     }
 

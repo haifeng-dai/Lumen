@@ -216,6 +216,19 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "메타데이터 동기화",
         I18nKey::SyncAttachments => "첨부 파일 동기화",
+        I18nKey::DatabaseSyncInProgress => {
+            "데이터베이스 동기화를 업그레이드하는 중입니다. 파일 동기화는 계속 사용할 수 있습니다"
+        }
+        I18nKey::DatabaseSyncNeedsInitialization => "데이터베이스 동기화 초기화가 필요합니다",
+        I18nKey::DatabaseSyncNeedsAdoption => "원격 데이터베이스 채택이 필요합니다",
+        I18nKey::DatabaseSyncIdentityMismatch => "데이터베이스 ID가 일치하지 않습니다",
+        I18nKey::DatabaseSyncConflict => "데이터베이스 동기화 충돌",
+        I18nKey::DatabaseSyncPartialFailure => "데이터베이스 동기화 일부 실패",
+        I18nKey::DatabaseSyncError => "데이터베이스 동기화 오류",
+        I18nKey::DatabaseSyncUploaded => "업로드됨",
+        I18nKey::DatabaseSyncDownloaded => "다운로드됨",
+        I18nKey::DatabaseSyncConflictsCount => "충돌",
+        I18nKey::DatabaseSyncFailuresCount => "실패",
         I18nKey::TestConnection => "연결 테스트",
         I18nKey::WebDavSettings => "WebDAV 설정",
         I18nKey::EnableWebDav => "WebDAV 사용",

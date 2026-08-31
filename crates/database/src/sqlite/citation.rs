@@ -2,7 +2,7 @@ use super::Database;
 use chrono::Local;
 use log::{debug, info};
 use models::Citation;
-use rusqlite::{OptionalExtension, Result, params};
+use rusqlite::{Result, params};
 
 impl Database {
     /// 添加引用关联
@@ -155,23 +155,6 @@ impl Database {
                 [source_id, target_id],
             )?;
             Ok(())
-        })
-    }
-
-    /// 读取引用本地同步状态 `(version, is_dirty)`。
-    pub fn get_citation_sync_state(
-        &self,
-        source_id: &str,
-        target_id: &str,
-    ) -> Result<Option<(i64, bool)>> {
-        self.with_conn(|conn| {
-            conn
-                .query_row(
-                    "SELECT version, is_dirty FROM literature_citations WHERE source_id = ?1 AND target_id = ?2",
-                    [source_id, target_id],
-                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?)),
-                )
-                .optional()
         })
     }
 
