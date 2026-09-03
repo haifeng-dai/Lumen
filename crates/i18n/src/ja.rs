@@ -220,6 +220,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "メタデータを同期",
         I18nKey::SyncAttachments => "添付ファイルを同期",
+        I18nKey::FileSyncLastRun => "最終ファイル同期",
+        I18nKey::FileSyncSummaryUnavailable => "ファイル同期サマリーを取得できません",
+        I18nKey::SyncSkippedBusy => "同期が実行中のため、今回の要求は開始されませんでした",
+        I18nKey::SyncUploaded => "アップロード",
+        I18nKey::SyncDownloaded => "ダウンロード",
+        I18nKey::SyncDeleted => "削除",
+        I18nKey::SyncFailures => "失敗",
+        I18nKey::SyncWaiting => "待機",
+        I18nKey::SyncPendingDownload => "ダウンロード待ち",
+        I18nKey::SyncUnknownDivergence => "不一致",
+        I18nKey::SyncUnrecoverable => "復元不可",
         I18nKey::DatabaseSyncInProgress => {
             "データベース同期をアップグレード中です。ファイル同期は利用できます"
         }
@@ -405,5 +416,39 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "削除済みデータを整理",
         I18nKey::PurgeDeletedData => "削除済みデータを完全に整理（ローカル + リモート）",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "リモートファイルストレージの初期化",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "リモートストレージが空で未初期化です。現在のローカルライブラリの添付ファイル保存先として初期化しますか？"
+        }
+        I18nKey::FileLibraryInitializing => "リモートファイルストレージを初期化中...",
+        I18nKey::FileLibraryInitSuccess => "リモートファイルストレージの初期化に成功しました",
+        I18nKey::FileLibraryInitFailed => "リモートファイルストレージの初期化に失敗しました",
+        I18nKey::FileLibraryUnidentified => {
+            "リモートストレージに識別不能なファイルが存在します。安全のため同期できません"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "リモートファイルストレージのライブラリ ID がローカルと一致しません。同期を拒否しました"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "リモートから添付ファイルを復元中...",
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "オンデマンドダウンロード待ちです。即時復元を試行しています"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "リモートオブジェクトが存在しないため、ファイルを復元できません"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "ローカルとリモートの両方でファイルが変更されたため、自動上書きを防止しました"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "信頼できるベースラインがないか内容が分岐しているため、自動上書きを防止しました"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "添付ファイルの復元に失敗しました。接続や権限を確認してください"
+        }
+        I18nKey::AttachmentOpenFailedNotice => "外部プログラムで添付ファイルを開けませんでした",
     }
 }

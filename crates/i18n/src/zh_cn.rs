@@ -213,6 +213,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // 同步
         I18nKey::SyncMetadata => "同步元数据",
         I18nKey::SyncAttachments => "同步附件",
+        I18nKey::FileSyncLastRun => "最近文件同步",
+        I18nKey::FileSyncSummaryUnavailable => "文件同步摘要不可用",
+        I18nKey::SyncSkippedBusy => "已有同步正在进行，本次请求未启动",
+        I18nKey::SyncUploaded => "上传",
+        I18nKey::SyncDownloaded => "下载",
+        I18nKey::SyncDeleted => "删除",
+        I18nKey::SyncFailures => "失败",
+        I18nKey::SyncWaiting => "等待",
+        I18nKey::SyncPendingDownload => "待下载",
+        I18nKey::SyncUnknownDivergence => "分歧",
+        I18nKey::SyncUnrecoverable => "无法恢复",
         I18nKey::DatabaseSyncInProgress => "数据库同步进行中",
         I18nKey::DatabaseSyncNeedsInitialization => "数据库同步需要初始化确认",
         I18nKey::DatabaseSyncNeedsAdoption => "数据库同步需要采用远端资料库",
@@ -391,5 +402,29 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::HideOthers => "隐藏其他",
         I18nKey::ShowAll => "显示全部",
         I18nKey::Services => "服务",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "初始化远端文件存储",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "检测到远端存储为空且未初始化。是否将该远端存储初始化为当前本地资料库的附件存储库？"
+        }
+        I18nKey::FileLibraryInitializing => "正在初始化远端文件存储...",
+        I18nKey::FileLibraryInitSuccess => "远端文件存储初始化成功",
+        I18nKey::FileLibraryInitFailed => "远端文件存储初始化失败",
+        I18nKey::FileLibraryUnidentified => "远端存储存在非空未知内容但缺失识别文件，无法安全同步",
+        I18nKey::FileLibraryIdentityMismatch => {
+            "远端文件存储绑定的资料库 ID 与当前数据库不匹配，同步已拒绝"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "正在从远端恢复附件文件...",
+        I18nKey::AttachmentPendingDownloadNotice => "该附件处于按需下载队列中，正在尝试即时恢复",
+        I18nKey::AttachmentUnrecoverableMissingNotice => "远端对象不存在，该文件无法恢复",
+        I18nKey::AttachmentFileConflictNotice => "本地与远端文件均发生变化，已阻止自动覆盖",
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "缺少可信基准线或两端内容分歧，已阻止自动覆盖"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => "附件恢复失败，请检查网络连接或远端存储权限",
+        I18nKey::AttachmentOpenFailedNotice => "使用外部程序打开附件失败",
     }
 }

@@ -16,7 +16,7 @@ pub use mysql::{
 };
 pub use sqlite::{
     Database, DatabaseSyncSummary, LocalSyncState, SyncConflict, SyncEntityKey, SyncEntityType,
-    canonical_key, decode_relation_key,
+    canonical_key, decode_relation_key, object_key_from_attachment_id,
 };
 pub use sync_download::{RemoteReadBatch, RemoteRecord};
 pub use sync_merge::MergeOutcome;

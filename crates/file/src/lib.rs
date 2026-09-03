@@ -5,7 +5,11 @@ pub mod noop;
 pub mod types;
 pub mod webdav;
 
-pub use backend::AttachmentBackend;
+pub use backend::{
+    AttachmentBackend, FileLibraryIdentity, LibraryInspection, RemoteObjectEntry,
+    UploadObjectResult, parse_file_library_identity_json, validate_canonical_object_key,
+    validate_canonical_uuid,
+};
 pub use local::LocalFileManager;
 pub use types::{GoogleDriveConfig, WebDavConfig};
 

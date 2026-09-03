@@ -152,10 +152,29 @@ impl SettingsWindow {
                                         .on_click({
                                             let app = app.clone();
                                             let weak = weak.clone();
-                                            move |_, _, cx| {
+                                            move |_, window, cx| {
                                                 let app = app.clone();
-                                                cx.spawn(move |_: &mut AsyncApp| async move {
-                                                    app.perform_attachments_sync();
+                                                let handle = window.window_handle();
+                                                let l = l;
+                                                cx.spawn(move |cx: &mut AsyncApp| {
+                                                    let mut ax = cx.clone();
+                                                    async move {
+                                                        // 手动触发：锁冲突必须让用户知道请求未启动
+                                                        if app.perform_file_only_sync().await
+                                                            == services::sync::SyncRunOutcome::SkippedBusy
+                                                        {
+                                                            let _ = ax.update_window(
+                                                                handle,
+                                                                |_, _, cx| {
+                                                                    show_notification(
+                                                                        NotificationType::Warning,
+                                                                        t(I18nKey::SyncSkippedBusy, l),
+                                                                        cx,
+                                                                    );
+                                                                },
+                                                            );
+                                                        }
+                                                    }
                                                 })
                                                 .detach();
                                                 if let Some(this) = weak.upgrade() {
@@ -532,10 +551,29 @@ impl SettingsWindow {
                                         .on_click({
                                             let app = app.clone();
                                             let weak = weak.clone();
-                                            move |_, _, cx| {
+                                            move |_, window, cx| {
                                                 let app = app.clone();
-                                                cx.spawn(move |_: &mut AsyncApp| async move {
-                                                    app.perform_sync();
+                                                let handle = window.window_handle();
+                                                let l = l;
+                                                cx.spawn(move |cx: &mut AsyncApp| {
+                                                    let mut ax = cx.clone();
+                                                    async move {
+                                                        // 手动触发：锁冲突必须让用户知道请求未启动
+                                                        if app.perform_sync().await
+                                                            == services::sync::SyncRunOutcome::SkippedBusy
+                                                        {
+                                                            let _ = ax.update_window(
+                                                                handle,
+                                                                |_, _, cx| {
+                                                                    show_notification(
+                                                                        NotificationType::Warning,
+                                                                        t(I18nKey::SyncSkippedBusy, l),
+                                                                        cx,
+                                                                    );
+                                                                },
+                                                            );
+                                                        }
+                                                    }
                                                 })
                                                 .detach();
                                                 if let Some(this) = weak.upgrade() {

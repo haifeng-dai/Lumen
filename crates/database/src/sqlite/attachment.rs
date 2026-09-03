@@ -15,8 +15,8 @@ impl Database {
         now: i64,
     ) -> Result<()> {
         conn.execute(
-            "INSERT INTO attachments (id, literature_id, file_path, file_name, file_size, mime_type, etag, is_main, is_dirty, is_deleted, version, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, 0, 1, ?9, ?10)",
-            params![att.id, literature_id, att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.is_main, now, now],
+            "INSERT INTO attachments (id, literature_id, file_path, file_name, file_size, mime_type, etag, hash, is_main, is_dirty, is_deleted, version, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, 0, 1, ?10, ?11)",
+            params![att.id, literature_id, att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.hash, att.is_main, now, now],
         )?;
         Ok(())
     }
@@ -30,8 +30,8 @@ impl Database {
         now: i64,
     ) -> Result<()> {
         conn.execute(
-            "UPDATE attachments SET file_path = ?1, file_name = ?2, file_size = ?3, mime_type = ?4, etag = ?5, is_main = ?6, is_deleted = 0, is_dirty = ?7, version = ?8, updated_at = ?9 WHERE id = ?10",
-            params![att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.is_main, is_dirty, version, now, att.id],
+            "UPDATE attachments SET file_path = ?1, file_name = ?2, file_size = ?3, mime_type = ?4, etag = ?5, hash = ?6, is_main = ?7, is_deleted = 0, is_dirty = ?8, version = ?9, updated_at = ?10 WHERE id = ?11",
+            params![att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.hash, att.is_main, is_dirty, version, now, att.id],
         )?;
         Ok(())
     }
@@ -67,8 +67,8 @@ impl Database {
             }
 
             conn.execute(
-                "INSERT OR REPLACE INTO attachments (id, literature_id, file_path, file_name, file_size, mime_type, etag, is_main, is_dirty, is_deleted, version, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-                params![att.id, att.literature_id, att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.is_main, att.is_dirty, att.is_deleted, att.version, att.created_at, att.updated_at],
+                "INSERT OR REPLACE INTO attachments (id, literature_id, file_path, file_name, file_size, mime_type, etag, hash, is_main, is_dirty, is_deleted, version, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![att.id, att.literature_id, att.file_path, att.file_name, att.file_size as i64, att.mime_type, att.etag, att.hash, att.is_main, att.is_dirty, att.is_deleted, att.version, att.created_at, att.updated_at],
             )?;
             Ok(())
         })
@@ -403,5 +403,125 @@ impl Database {
 
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_db() -> Database {
+        Database::new(":memory:").unwrap()
+    }
+
+    #[test]
+    fn attachment_round_trip_preserves_hash() {
+        let db = create_test_db();
+        let att = Attachment {
+            id: "att-1".to_string(),
+            literature_id: "lit-1".to_string(),
+            file_path: "storage/test.pdf".to_string(),
+            file_name: "test.pdf".to_string(),
+            file_size: 1024,
+            mime_type: Some("application/pdf".to_string()),
+            etag: Some("etag-123".to_string()),
+            hash: Some(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            ),
+            is_main: true,
+            is_dirty: false,
+            is_deleted: false,
+            version: 2,
+            created_at: 1000,
+            updated_at: 2000,
+        };
+
+        db.insert_attachment(&att).unwrap();
+
+        let loaded = db.get_attachment("att-1").unwrap().unwrap();
+        assert_eq!(
+            loaded.hash,
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string())
+        );
+        assert_eq!(loaded.etag, Some("etag-123".to_string()));
+        assert_eq!(loaded.file_size, 1024);
+        assert!(loaded.is_main);
+        assert_eq!(loaded.version, 2);
+
+        let all = db.get_all_attachments_include_deleted().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(
+            all[0].hash,
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string())
+        );
+    }
+
+    #[test]
+    fn attachment_without_hash_round_trips_as_none() {
+        let db = create_test_db();
+        let att = Attachment {
+            id: "att-nohash".to_string(),
+            literature_id: "lit-1".to_string(),
+            file_path: "storage/nohash.pdf".to_string(),
+            file_name: "nohash.pdf".to_string(),
+            file_size: 2048,
+            mime_type: None,
+            etag: None,
+            hash: None,
+            is_main: false,
+            is_dirty: true,
+            is_deleted: false,
+            version: 1,
+            created_at: 1000,
+            updated_at: 1000,
+        };
+
+        db.insert_attachment(&att).unwrap();
+
+        let loaded = db.get_attachment("att-nohash").unwrap().unwrap();
+        assert_eq!(loaded.hash, None);
+        assert_eq!(loaded.etag, None);
+    }
+
+    #[test]
+    fn existing_attachment_and_sync_state_regression() {
+        let db = create_test_db();
+        let att = Attachment {
+            id: "att-reg".to_string(),
+            literature_id: "lit-1".to_string(),
+            file_path: "storage/reg.pdf".to_string(),
+            file_name: "reg.pdf".to_string(),
+            file_size: 512,
+            mime_type: Some("application/pdf".to_string()),
+            etag: None,
+            hash: Some("hash-reg".to_string()),
+            is_main: false,
+            is_dirty: true,
+            is_deleted: false,
+            version: 1,
+            created_at: 1000,
+            updated_at: 1000,
+        };
+        db.insert_attachment(&att).unwrap();
+
+        // Check dirty list includes it with hash
+        let dirty = db.get_dirty_attachments().unwrap();
+        assert_eq!(dirty.len(), 1);
+        assert_eq!(dirty[0].hash, Some("hash-reg".to_string()));
+
+        // Mark synced and verify
+        db.mark_attachment_synced("att-reg").unwrap();
+        let dirty_after = db.get_dirty_attachments().unwrap();
+        assert_eq!(dirty_after.len(), 0);
+
+        // Soft delete
+        db.delete_attachment("att-reg").unwrap();
+        let active = db.get_attachment("att-reg").unwrap();
+        assert!(active.is_none());
+
+        let all = db.get_all_attachments_include_deleted().unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].is_deleted);
+        assert_eq!(all[0].hash, Some("hash-reg".to_string()));
     }
 }

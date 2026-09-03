@@ -7,7 +7,7 @@ use crate::ui::{
 };
 use components::IconName;
 use gpui::prelude::*;
-use services::sync::{DatabaseSyncStatus, SyncStatus};
+use services::sync::{DatabaseSyncStatus, FileSyncStatus, FileSyncSummaryView, SyncRunOutcome};
 use std::ops::Range;
 
 use gpui::{
@@ -31,13 +31,13 @@ impl Render for LiteraturePanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let surface = surface(cx);
         let ui = cx.global::<crate::app_state::ui::UiState>();
-        let (sync_status, attachment_sync_status) = if let Ok(state) = self.app.sync_state.lock() {
+        let (sync_status, file_status) = if let Ok(state) = self.app.sync_state.lock() {
             (
                 state.database_sync_status.clone(),
-                state.attachment_sync_status.clone(),
+                state.file_sync_status.clone(),
             )
         } else {
-            (DatabaseSyncStatus::Idle, SyncStatus::Idle)
+            (DatabaseSyncStatus::Idle, FileSyncStatus::Idle)
         };
         let (folders, mut tags) = {
             let ds = self.data_store.read(cx);
@@ -72,6 +72,17 @@ impl Render for LiteraturePanel {
             DatabaseSyncStatus::Conflict => Some(I18nKey::DatabaseSyncConflict),
             DatabaseSyncStatus::PartialFailure => Some(I18nKey::DatabaseSyncPartialFailure),
             DatabaseSyncStatus::Error(_) => Some(I18nKey::DatabaseSyncError),
+        };
+
+        // 最近一次文件同步摘要（经 services 只读接口，UI 不直接访问 database）
+        let file_sync_tooltip: Option<SharedString> = match self.app.file_sync_summary() {
+            Ok(Some(view)) => Some(format_file_sync_summary(&view, lang).into()),
+            Ok(None) => None,
+            // 记录损坏：显示安全的不可用状态，不降级为成功
+            Err(_) => Some(SharedString::from(t(
+                I18nKey::FileSyncSummaryUnavailable,
+                lang,
+            ))),
         };
 
         // 按名称排序标签
@@ -845,7 +856,7 @@ impl Render for LiteraturePanel {
                                         status => {
                                             let parent = this.parent_view.clone();
                                             if let Some(parent) = parent.upgrade() {
-                                                let _ = parent.update(cx, |window, cx| {
+                                                parent.update(cx, |window, cx| {
                                                     window.open_database_sync_action(status.clone(), cx);
                                                 });
                                             }
@@ -857,32 +868,95 @@ impl Render for LiteraturePanel {
                     })
                     .child(
                         Button::new("btn-sync-attachments")
-                            .child(match &attachment_sync_status {
-                                SyncStatus::Syncing => Icon::new(IconName::LoaderCircle)
+                            .child(match &file_status {
+                                FileSyncStatus::Syncing => Icon::new(IconName::LoaderCircle)
                                     .small()
                                     .text_color(theme.primary),
-                                SyncStatus::Error(_) => Icon::new(IconName::TriangleAlert)
+                                FileSyncStatus::Error(_) => Icon::new(IconName::TriangleAlert)
                                     .small()
                                     .text_color(theme.red_light),
                                 _ => Icon::new(IconName::Cloud).small().text_color(theme.muted_foreground),
                             })
                             .ghost()
                             .xsmall()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if let SyncStatus::Syncing = attachment_sync_status {
+                            .when_some(file_sync_tooltip, |this, tip| this.tooltip(tip))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let FileSyncStatus::Syncing = file_status {
                                     return;
                                 }
 
-                                // 点击直接重试，不显示旧错误
                                 let app = this.app.clone();
-                                RUNTIME.spawn(async move {
-                                    app.perform_attachments_sync();
-                                });
-                                    cx.notify();
+                                let parent = this.parent_view.clone();
+                                let lang = this.app.current_language();
+                                let handle = window.window_handle();
+                                cx.spawn(async move |_, cx| {
+                                    let preflight = app.file_library_preflight().await;
+                                    match preflight {
+                                        services::sync::FileLibraryPreflight::InitializationRequired
+                                        | services::sync::FileLibraryPreflight::IdentityMismatch { .. }
+                                        | services::sync::FileLibraryPreflight::UnidentifiedRemote
+                                        | services::sync::FileLibraryPreflight::Error(_) => {
+                                            if let Some(parent) = parent.upgrade() {
+                                                parent.update(cx, |window, cx| {
+                                                    window.open_file_library_action(preflight, cx);
+                                                });
+                                            }
+                                        }
+                                        _ => {
+                                            // 手动触发：锁冲突必须让用户知道请求未启动
+                                            if app.perform_file_only_sync().await
+                                                == SyncRunOutcome::SkippedBusy
+                                            {
+                                                let _ = cx.update_window(handle, |_, _, cx| {
+                                                    crate::ui::notification::show_notification(
+                                                        crate::ui::notification::NotificationType::Warning,
+                                                        t(I18nKey::SyncSkippedBusy, lang),
+                                                        cx,
+                                                    );
+                                                });
+                                            }
+                                        }
+                                    }
+                                    anyhow::Ok(())
+                                })
+                                .detach();
+                                cx.notify();
                             })),
                     ),
             )
     }
+}
+
+/// 文件同步摘要的紧凑单行展示：最近时间 + 主要计数（恒显）
+/// + 扩展计数（仅非零时出现）。纯函数，便于测试。
+fn format_file_sync_summary(view: &FileSyncSummaryView, lang: i18n::Language) -> String {
+    use chrono::TimeZone;
+    let time = chrono::Local
+        .timestamp_opt(view.updated_at, 0)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| "--".to_string());
+    let mut parts = vec![format!("{} {}", t(I18nKey::FileSyncLastRun, lang), time)];
+    for (key, value) in [
+        (I18nKey::SyncUploaded, view.uploaded),
+        (I18nKey::SyncDownloaded, view.downloaded),
+        (I18nKey::SyncDeleted, view.deleted),
+        (I18nKey::SyncFailures, view.failures),
+    ] {
+        parts.push(format!("{} {value}", t(key, lang)));
+    }
+    for (key, value) in [
+        (I18nKey::SyncWaiting, view.waiting),
+        (I18nKey::SyncPendingDownload, view.pending_download),
+        (I18nKey::SyncConflicts, view.conflicts),
+        (I18nKey::SyncUnknownDivergence, view.unknown_divergence),
+        (I18nKey::SyncUnrecoverable, view.unrecoverable_missing),
+    ] {
+        if value > 0 {
+            parts.push(format!("{} {value}", t(key, lang)));
+        }
+    }
+    parts.join(" · ")
 }
 
 pub(crate) struct FolderTreeEntry {
@@ -898,4 +972,67 @@ pub(crate) struct StaticItemProps {
     pub(crate) is_selected: bool,
     pub(crate) id: String,
     pub(crate) theme: Theme,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use i18n::Language;
+
+    fn summary_view(
+        uploaded: usize,
+        downloaded: usize,
+        deleted: usize,
+        failures: usize,
+        waiting: usize,
+        pending_download: usize,
+        conflicts: usize,
+        unknown_divergence: usize,
+        unrecoverable_missing: usize,
+        updated_at: i64,
+    ) -> FileSyncSummaryView {
+        FileSyncSummaryView {
+            uploaded,
+            downloaded,
+            deleted,
+            skipped: 0,
+            waiting,
+            pending_download,
+            unrecoverable_missing,
+            conflicts,
+            unknown_divergence,
+            failures,
+            state: FileSyncStatus::Complete,
+            run_id: "run-1".to_string(),
+            file_library_id: None,
+            updated_at,
+        }
+    }
+
+    #[test]
+    fn file_sync_summary_always_shows_primary_counts() {
+        let view = summary_view(2, 1, 0, 1, 0, 0, 0, 0, 0, 1_700_000_000);
+        let out = format_file_sync_summary(&view, Language::En);
+        assert!(out.starts_with("Last file sync"), "got: {out}");
+        assert!(out.contains("Uploaded 2"), "got: {out}");
+        assert!(out.contains("Downloaded 1"), "got: {out}");
+        assert!(out.contains("Deleted 0"), "got: {out}");
+        assert!(out.contains("Failed 1"), "got: {out}");
+        assert!(!out.contains("Waiting"), "got: {out}");
+        assert!(!out.contains("Pending download"), "got: {out}");
+        assert!(!out.contains("Version Conflicts"), "got: {out}");
+        assert!(!out.contains("Divergence"), "got: {out}");
+        assert!(!out.contains("Unrecoverable"), "got: {out}");
+    }
+
+    #[test]
+    fn file_sync_summary_shows_extended_counts_only_when_nonzero() {
+        let view = summary_view(1, 0, 0, 0, 1, 2, 3, 4, 5, 1_700_000_000);
+        let out = format_file_sync_summary(&view, Language::En);
+        assert!(out.contains("Waiting 1"), "got: {out}");
+        assert!(out.contains("Pending download 2"), "got: {out}");
+        assert!(out.contains("Version Conflicts 3"), "got: {out}");
+        assert!(out.contains("Divergence 4"), "got: {out}");
+        assert!(out.contains("Unrecoverable 5"), "got: {out}");
+    }
 }

@@ -3,6 +3,8 @@ use crate::database_sync::{IdentityDecision, IdentityPlan};
 use crate::feed::FeedService;
 use crate::feed::FetcherService;
 use crate::library::{AttachmentService, FolderService, LiteratureService, TagService};
+use crate::sync::FileSyncSummaryView;
+use crate::sync::SyncRunOutcome;
 use crate::sync::SyncService;
 use crate::sync::SyncStateInner;
 use anyhow::{Result, anyhow};
@@ -196,11 +198,16 @@ impl MainApp {
         }
     }
 
-    pub fn perform_sync(self: Arc<Self>) {
-        self.sync_service.clone().perform_full_sync();
+    pub async fn perform_sync(self: Arc<Self>) -> SyncRunOutcome {
+        self.sync_service.perform_full_sync().await
     }
-    pub fn perform_attachments_sync(self: Arc<Self>) {
-        self.sync_service.clone().perform_attachments_sync();
+    pub async fn perform_file_only_sync(self: Arc<Self>) -> SyncRunOutcome {
+        self.sync_service.perform_file_only_sync().await
+    }
+
+    /// 只读接口：最近一次文件同步摘要（UI 不得直接访问 database）。
+    pub fn file_sync_summary(&self) -> Result<Option<FileSyncSummaryView>> {
+        self.sync_service.file_sync_summary()
     }
 
     pub async fn test_webdav_config(
@@ -308,6 +315,39 @@ impl MainApp {
 
     pub fn database_sync_summary(&self) -> Result<Option<DatabaseSyncSummary>> {
         self.sync_service.database_sync_summary()
+    }
+
+    pub async fn file_library_preflight(&self) -> crate::sync::attachments::FileLibraryPreflight {
+        self.sync_service.file_library_preflight().await
+    }
+
+    pub async fn confirm_file_library_initialization(
+        &self,
+    ) -> Result<crate::sync::attachments::FileRoundSummary> {
+        let res = self
+            .sync_service
+            .confirm_file_library_initialization()
+            .await?;
+        self.notify_ui_changed();
+        Ok(res)
+    }
+
+    pub async fn prepare_attachment_for_open(
+        &self,
+        attachment_id: &str,
+    ) -> Result<crate::sync::attachments::PreparedAttachment> {
+        self.sync_service
+            .prepare_attachment_for_open(attachment_id)
+            .await
+    }
+
+    pub async fn get_attachment_sync_issue(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<crate::sync::attachments::AttachmentSyncIssue>> {
+        self.sync_service
+            .get_attachment_sync_issue(attachment_id)
+            .await
     }
 
     /// 内部助手：消除“操作 -> 通知 -> 返回”模板代码

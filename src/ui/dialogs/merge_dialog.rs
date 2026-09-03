@@ -2,7 +2,7 @@ use crate::app_state::theme::surface;
 use crate::ui::dialogs::compare_dialog::FieldSelection;
 use components::IconName;
 use gpui::prelude::*;
-use gpui::{ElementId, MouseButton, SharedString, Window, div, px, rems, transparent_black};
+use gpui::{ElementId, MouseButton, SharedString, Window, div, rems, transparent_black};
 use gpui_component::{
     ActiveTheme, Icon, TitleBar,
     button::{Button, ButtonVariants},
@@ -11,10 +11,8 @@ use gpui_component::{
     v_flex,
 };
 use i18n::{I18nKey, t};
-use log::error;
 use models::Literature;
 use services::app::MainApp;
-use std::process::Command;
 use std::sync::Arc;
 
 pub struct MergeDialogResult {
@@ -447,7 +445,7 @@ impl MergeDialog {
     fn render_file_badge(
         &self,
         att: &models::Attachment,
-        lit_id: &str,
+        _lit_id: &str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -457,10 +455,8 @@ impl MergeDialog {
             .unwrap_or("FILE")
             .to_uppercase();
 
-        let lit_id_str = lit_id.to_string();
         let att_id_str = att.id.clone();
         let app_clone = self.app.clone();
-        let file_path = att.file_path.clone();
 
         div()
             .text_xs()
@@ -482,12 +478,7 @@ impl MergeDialog {
             .child(display_ext)
             .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                 cx.stop_propagation();
-                if !app_clone.should_use_external_viewer(&file_path) && file_path.ends_with(".pdf")
-                {
-                    open_preview_helper(app_clone.clone(), &lit_id_str, &att_id_str, cx);
-                } else {
-                    let _ = app_clone.open_attachment(&att_id_str);
-                }
+                let _ = app_clone.open_attachment(&att_id_str);
             })
     }
 
@@ -1449,108 +1440,5 @@ impl Render for MergeDialog {
                             })),
                     ),
             )
-    }
-}
-
-fn open_preview_helper(app: Arc<MainApp>, lit_id: &str, att_id: &str, cx: &mut gpui::App) {
-    let Some(lit) = app.db.get_literature(lit_id).ok().flatten() else {
-        error!("文献不存在");
-        return;
-    };
-    let Some(att) = lit.attachments.iter().find(|a| a.id == att_id) else {
-        error!("该文献没有附件");
-        return;
-    };
-
-    let file_path = std::path::PathBuf::from(&att.file_path);
-    if !file_path.exists() {
-        error!("文件不存在: {:?}", file_path);
-        return;
-    }
-
-    if att.file_path.ends_with(".pdf") {
-        let doc_id = format!("{}::{}", lit.id, att.id);
-        let app_clone = app.clone();
-        let lit_id_clone = lit.id.clone();
-        let title: SharedString = lit.title.clone().into();
-
-        struct PreviewDelegate {
-            app: Arc<MainApp>,
-            literature_id: String,
-        }
-        impl services::pdf::PdfReaderDelegate for PreviewDelegate {
-            fn load_annotations(&self, id: &str) -> Vec<models::Annotation> {
-                self.app.db.load_annotations(id).unwrap_or_default()
-            }
-            fn current_literature_attachments(&self) -> Vec<models::Attachment> {
-                self.app
-                    .db
-                    .get_literature(&self.literature_id)
-                    .ok()
-                    .flatten()
-                    .map(|l| l.attachments.clone())
-                    .unwrap_or_default()
-            }
-            fn current_language(&self) -> i18n::Language {
-                self.app.current_language()
-            }
-        }
-
-        let delegate = Arc::new(PreviewDelegate {
-            app: app_clone,
-            literature_id: lit_id_clone,
-        });
-
-        let bounds = gpui::Bounds::centered(None, gpui::size(px(900.0), px(700.0)), cx);
-        let _ = cx.open_window(
-            gpui::WindowOptions {
-                window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
-                titlebar: Some(gpui::TitlebarOptions {
-                    title: Some(title),
-                    appears_transparent: true,
-                    traffic_light_position: Some(gpui::Point::new(px(9.0), px(9.0))),
-                }),
-                is_resizable: true,
-                is_minimizable: true,
-                kind: gpui::WindowKind::Floating,
-                ..Default::default()
-            },
-            |_window, cx| {
-                let (service, response_rx) = services::pdf::PdfService::new(file_path.clone())
-                    .expect("Failed to create PdfService");
-
-                cx.new(|cx| {
-                    let mut v = crate::pdf::PdfReaderView::new(
-                        service,
-                        Some(delegate.clone()),
-                        doc_id.clone(),
-                        file_path.clone(),
-                        cx,
-                    );
-                    v.set_simple_mode(true);
-                    v.init_workers(response_rx, cx);
-                    v
-                })
-            },
-        );
-    } else {
-        open_file_with_system(&file_path);
-    }
-}
-
-fn open_file_with_system(path: &std::path::Path) {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("cmd")
-            .args(["/c", "start", "", &path.to_string_lossy()])
-            .status();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = Command::new("open").arg(path).status();
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let _ = Command::new("xdg-open").arg(path).status();
     }
 }

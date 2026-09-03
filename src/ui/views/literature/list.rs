@@ -499,7 +499,7 @@ impl LiteratureListView {
 
                             {
                                 if let Some(ref path) = main_file_path
-                                    && std::path::Path::new(path).exists()
+                                    && path.to_lowercase().ends_with(".pdf")
                                     && !this.app.should_use_external_viewer(path)
                                 {
                                     if let Some(parent) = &this.parent_view
@@ -519,7 +519,7 @@ impl LiteratureListView {
                                 }
                             }
 
-                            // fallback：非 PDF 文件或 pdf feature 未开启时，用系统默认程序打开
+                            // fallback：非 PDF 文件或配置外部阅读器打开时，通过统一入口打开
                             let _ = this.app.open_literature_main_file(&id);
                         });
                     }

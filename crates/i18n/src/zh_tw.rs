@@ -214,6 +214,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // 同步
         I18nKey::SyncMetadata => "同步元數據",
         I18nKey::SyncAttachments => "同步附件",
+        I18nKey::FileSyncLastRun => "最近檔案同步",
+        I18nKey::FileSyncSummaryUnavailable => "檔案同步摘要不可用",
+        I18nKey::SyncSkippedBusy => "已有同步進行中，本次請求未啟動",
+        I18nKey::SyncUploaded => "上傳",
+        I18nKey::SyncDownloaded => "下載",
+        I18nKey::SyncDeleted => "刪除",
+        I18nKey::SyncFailures => "失敗",
+        I18nKey::SyncWaiting => "等待",
+        I18nKey::SyncPendingDownload => "待下載",
+        I18nKey::SyncUnknownDivergence => "分歧",
+        I18nKey::SyncUnrecoverable => "無法恢復",
         I18nKey::DatabaseSyncInProgress => "資料庫同步進行中",
         I18nKey::DatabaseSyncNeedsInitialization => "資料庫同步需要初始化確認",
         I18nKey::DatabaseSyncNeedsAdoption => "資料庫同步需要採用遠端資料庫",
@@ -389,5 +400,29 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "清空雲端檔案",
         I18nKey::PurgeSyncedDeletions => "清理已刪除資料",
         I18nKey::PurgeDeletedData => "徹底清理已刪除資料（本機+遠端）",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "初始化遠端檔案儲存",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "偵測到遠端儲存為空且未初始化。是否將該遠端儲存初始化為目前本機資料庫的附件儲存庫？"
+        }
+        I18nKey::FileLibraryInitializing => "正在初始化遠端檔案儲存...",
+        I18nKey::FileLibraryInitSuccess => "遠端檔案儲存初始化成功",
+        I18nKey::FileLibraryInitFailed => "遠端檔案儲存初始化失敗",
+        I18nKey::FileLibraryUnidentified => "遠端儲存存在非空未知內容但缺失識別檔案，無法安全同步",
+        I18nKey::FileLibraryIdentityMismatch => {
+            "遠端檔案儲存綁定的資料庫 ID 與目前資料庫不相符，同步已拒絕"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "正在從遠端復原附件檔案...",
+        I18nKey::AttachmentPendingDownloadNotice => "該附件處於隨選下載佇列中，正在嘗試即時復原",
+        I18nKey::AttachmentUnrecoverableMissingNotice => "遠端物件不存在，該檔案無法復原",
+        I18nKey::AttachmentFileConflictNotice => "本機與遠端檔案均發生變更，已阻止自動覆蓋",
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "缺少可信基準線或兩端內容分歧，已阻止自動覆蓋"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => "附件復原失敗，請檢查網路連線或遠端儲存權限",
+        I18nKey::AttachmentOpenFailedNotice => "使用外部程式開啟附件失敗",
     }
 }

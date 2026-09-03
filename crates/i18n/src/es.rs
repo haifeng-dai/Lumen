@@ -220,6 +220,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Sincronizar metadatos",
         I18nKey::SyncAttachments => "Sincronizar adjuntos",
+        I18nKey::FileSyncLastRun => "Última sincronización de archivos",
+        I18nKey::FileSyncSummaryUnavailable => "Resumen de sincronización no disponible",
+        I18nKey::SyncSkippedBusy => "Ya hay una sincronización en curso, solicitud no iniciada",
+        I18nKey::SyncUploaded => "Subidos",
+        I18nKey::SyncDownloaded => "Descargados",
+        I18nKey::SyncDeleted => "Eliminados",
+        I18nKey::SyncFailures => "Fallos",
+        I18nKey::SyncWaiting => "En espera",
+        I18nKey::SyncPendingDownload => "Descarga pendiente",
+        I18nKey::SyncUnknownDivergence => "Divergencias",
+        I18nKey::SyncUnrecoverable => "Irrecuperables",
         I18nKey::DatabaseSyncInProgress => {
             "La sincronización de la base de datos se está actualizando; la sincronización de archivos sigue disponible"
         }
@@ -410,5 +421,43 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Purgar datos eliminados",
         I18nKey::PurgeDeletedData => "Purgar datos eliminados (local + remoto)",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "Inicializar almacenamiento remoto de archivos",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "El almacenamiento remoto está vacío y no inicializado. ¿Desea inicializarlo como almacenamiento de archivos adjuntos para la biblioteca local actual?"
+        }
+        I18nKey::FileLibraryInitializing => "Inicializando almacenamiento remoto de archivos...",
+        I18nKey::FileLibraryInitSuccess => "Almacenamiento remoto inicializado con éxito",
+        I18nKey::FileLibraryInitFailed => "Error al inicializar el almacenamiento remoto",
+        I18nKey::FileLibraryUnidentified => {
+            "El almacenamiento remoto contiene archivos desconocidos sin documento de identidad; no se puede sincronizar de forma segura"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "La identidad del almacenamiento remoto no coincide con la base de datos local; sincronización rechazada"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => {
+            "Restaurando archivo adjunto desde el almacenamiento remoto..."
+        }
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "El adjunto está pendiente de descarga bajo demanda; intentando restauración inmediata"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "El objeto remoto no existe; no se puede recuperar el archivo"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "Archivos local y remoto modificados; sobrescritura automática evitada"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "Falta línea base confiable o contenidos divergentes; sobrescritura automática evitada"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "Error al restaurar el adjunto; verifique la conexión y permisos"
+        }
+        I18nKey::AttachmentOpenFailedNotice => {
+            "No se pudo abrir el adjunto con el programa externo"
+        }
     }
 }

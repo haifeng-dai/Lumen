@@ -1,6 +1,7 @@
 use crate::app_state::config::ConfigStore;
 use crate::app_state::data::{DataStore, DataStoreEvent};
 use crate::ui::notification::{NotificationType, show_notification};
+use crate::ui::views::main_window::actions::attachment_open_notice_kind;
 use crate::ui::{
     apply_theme,
     components::ToastOverlay,
@@ -11,8 +12,12 @@ use crate::ui::{
     },
 };
 use gpui::{AppContext, Entity, KeyBinding, ReadGlobal, Window, px};
+use i18n::t;
 use services::notify::RefreshMsg;
-use services::{app::MainApp, sync::SyncStatus};
+use services::{
+    app::MainApp,
+    sync::{FileSyncStatus, SyncStatus},
+};
 use std::sync::Arc;
 
 use super::*;
@@ -141,7 +146,7 @@ impl super::MainWindow {
                                 // 把后台同步错误桥接为 Toast 弹窗（带去重，避免 UiChanged 反复广播时重复弹）
                                 let (meta, attach) = {
                                     let st = this.app.sync_state.lock().unwrap();
-                                    (st.sync_status.clone(), st.attachment_sync_status.clone())
+                                    (st.sync_status.clone(), st.file_sync_status.clone())
                                 };
                                 match &meta {
                                     SyncStatus::Error(msg)
@@ -155,16 +160,29 @@ impl super::MainWindow {
                                     _ => this.last_metadata_error = None,
                                 }
                                 match &attach {
-                                    SyncStatus::Error(msg)
+                                    FileSyncStatus::Error(kind)
                                         if this.last_attach_error.as_deref()
-                                            != Some(msg.as_str()) =>
+                                            != Some(kind.category()) =>
                                     {
-                                        show_notification(NotificationType::Error, msg.clone(), cx);
-                                        this.last_attach_error = Some(msg.clone());
+                                        show_notification(
+                                            NotificationType::Error,
+                                            kind.category().to_string(),
+                                            cx,
+                                        );
+                                        this.last_attach_error = Some(kind.category().to_string());
                                     }
-                                    SyncStatus::Error(_) => {}
+                                    FileSyncStatus::Error(_) => {}
                                     _ => this.last_attach_error = None,
                                 }
+                            });
+                        }
+                        Ok(RefreshMsg::AttachmentOpenNotice(notice)) => {
+                            // 翻译只发生在 UI 层，使用接收事件时的当前语言；
+                            // 每次打开动作最多一个 issue/error Toast，不经 UiChanged 重复弹出。
+                            let (nt, key) = attachment_open_notice_kind(notice);
+                            let _ = this_weak.update(&mut cx, |this, cx| {
+                                let lang = this.app.current_language();
+                                show_notification(nt, t(key, lang).to_string(), cx);
                             });
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

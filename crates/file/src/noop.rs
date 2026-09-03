@@ -1,11 +1,11 @@
-use crate::backend::{AttachmentBackend, RemoteFileEntry};
+use crate::backend::AttachmentBackend;
 use anyhow::{Result, anyhow};
 use log::warn;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-/// 空操作后端 — 未启用任何远程后端时使用
+/// 空操作后端 — 未启用任何远端后端时使用
 pub struct NoopBackend;
 
 impl AttachmentBackend for NoopBackend {
@@ -24,50 +24,67 @@ impl AttachmentBackend for NoopBackend {
         })
     }
 
-    fn upload(
+    fn inspect_library(
         &self,
-        _local_path: PathBuf,
-        _name: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::LibraryInspection>> + Send>> {
         Box::pin(async {
-            warn!("NoopBackend: upload — 未配置文件同步后端");
-            Err(anyhow!("未配置文件同步后端"))
+            warn!("NoopBackend: inspect_library — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
         })
     }
 
-    fn download(
+    fn initialize_library(
         &self,
-        _name: String,
-        _local_path: PathBuf,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>> {
-        Box::pin(async {
-            warn!("NoopBackend: download — 未配置文件同步后端");
-            Err(anyhow!("未配置文件同步后端"))
-        })
-    }
-
-    fn list(&self) -> Pin<Box<dyn Future<Output = Result<Vec<RemoteFileEntry>>> + Send>> {
-        Box::pin(async {
-            warn!("NoopBackend: list — 未配置文件同步后端，返回空列表");
-            Ok(Vec::new())
-        })
-    }
-
-    fn delete(&self, _name: String) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        Box::pin(async {
-            warn!("NoopBackend: delete — 未配置文件同步后端");
-            Ok(())
-        })
-    }
-
-    fn rename(
-        &self,
-        _old: String,
-        _new: String,
+        _identity: crate::backend::FileLibraryIdentity,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         Box::pin(async {
-            warn!("NoopBackend: rename — 未配置文件同步后端");
-            Ok(())
+            warn!("NoopBackend: initialize_library — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
         })
+    }
+
+    fn list_objects(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<crate::backend::RemoteObjectEntry>>> + Send>> {
+        Box::pin(async {
+            warn!("NoopBackend: list_objects — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
+        })
+    }
+
+    fn upload_object_if_absent(
+        &self,
+        _object_key: String,
+        _local_path: PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::UploadObjectResult>> + Send>> {
+        Box::pin(async {
+            warn!("NoopBackend: upload_object_if_absent — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
+        })
+    }
+
+    fn download_object(
+        &self,
+        _object_key: String,
+        _temporary_path: PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>> {
+        Box::pin(async {
+            warn!("NoopBackend: download_object — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
+        })
+    }
+
+    fn delete_object(
+        &self,
+        _object_key: String,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        Box::pin(async {
+            warn!("NoopBackend: delete_object — 未配置文件同步后端");
+            Err(anyhow!("backend disabled"))
+        })
+    }
+
+    fn configuration_fingerprint(&self) -> Pin<Box<dyn Future<Output = Result<String>> + Send>> {
+        Box::pin(async { Ok("noop".to_string()) })
     }
 }

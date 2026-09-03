@@ -12,7 +12,7 @@ use gpui_component::{
 use i18n::{I18nKey, Language, t};
 use log::{error, info};
 use models::Literature;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::SingleDetailBuffer;
 
@@ -458,10 +458,6 @@ impl super::LiteratureDetailView {
         let mut attachment_elements = Vec::new();
 
         for file in &literature.attachments {
-            let path_exists = Path::new(&file.file_path).exists();
-            if !path_exists {
-                continue;
-            }
             let display_ext = file_labels.get(&file.id).cloned().unwrap_or_else(|| {
                 Path::new(&file.file_name)
                     .extension()
@@ -476,7 +472,6 @@ impl super::LiteratureDetailView {
             let data_store = self.data_store.clone();
             let parent = parent_view.clone();
             let file_path = file.file_path.clone();
-            let file_path_pdf = file.file_path.clone();
             let parent_left = parent.clone();
             let parent_right = parent.clone();
 
@@ -503,10 +498,10 @@ impl super::LiteratureDetailView {
                     let data_store = data_store.clone();
                     let parent_left = parent_left.clone();
                     let att_id = att_id.clone();
-                    let file_path_pdf = file_path_pdf.clone();
                     move |_, _window, cx| {
                         cx.stop_propagation();
-                        if !app.should_use_external_viewer(&file_path) {
+                        let is_pdf = file_path.to_lowercase().ends_with(".pdf");
+                        if is_pdf && !app.should_use_external_viewer(&file_path) {
                             if let Some(lit) = data_store
                                 .read(cx)
                                 .literatures
@@ -517,11 +512,7 @@ impl super::LiteratureDetailView {
                                     parent_left.as_ref().and_then(gpui::WeakEntity::upgrade)
                             {
                                 parent.update(cx, |mw, cx| {
-                                    mw.open_pdf_viewer_with_path(
-                                        lit,
-                                        Some(PathBuf::from(&file_path_pdf)),
-                                        cx,
-                                    );
+                                    mw.open_pdf_viewer_with_attachment(lit, att_id.clone(), cx);
                                 });
                             }
                         } else {

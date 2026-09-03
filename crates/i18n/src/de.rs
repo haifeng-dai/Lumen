@@ -218,6 +218,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Metadaten synchronisieren",
         I18nKey::SyncAttachments => "Anhänge synchronisieren",
+        I18nKey::FileSyncLastRun => "Letzte Dateisynchronisierung",
+        I18nKey::FileSyncSummaryUnavailable => "Dateisync-Zusammenfassung nicht verfügbar",
+        I18nKey::SyncSkippedBusy => "Synchronisierung läuft bereits, Anfrage nicht gestartet",
+        I18nKey::SyncUploaded => "Hochgeladen",
+        I18nKey::SyncDownloaded => "Heruntergeladen",
+        I18nKey::SyncDeleted => "Gelöscht",
+        I18nKey::SyncFailures => "Fehler",
+        I18nKey::SyncWaiting => "Wartend",
+        I18nKey::SyncPendingDownload => "Ausstehender Download",
+        I18nKey::SyncUnknownDivergence => "Abweichungen",
+        I18nKey::SyncUnrecoverable => "Nicht behebbar",
         I18nKey::DatabaseSyncInProgress => {
             "Datenbanksynchronisierung wird aktualisiert; Dateisynchronisierung bleibt verfügbar"
         }
@@ -410,5 +421,45 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Gelöschte Daten bereinigen",
         I18nKey::PurgeDeletedData => "Gelöschte Daten vollständig bereinigen (lokal + remote)",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "Remote-Dateispeicher initialisieren",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "Der Remote-Speicher ist leer und nicht initialisiert. Möchten Sie ihn als Anhangsspeicher für die aktuelle lokale Bibliothek initialisieren?"
+        }
+        I18nKey::FileLibraryInitializing => "Remote-Dateispeicher wird initialisiert...",
+        I18nKey::FileLibraryInitSuccess => "Remote-Dateispeicher erfolgreich initialisiert",
+        I18nKey::FileLibraryInitFailed => {
+            "Initialisierung des Remote-Dateispeichers fehlgeschlagen"
+        }
+        I18nKey::FileLibraryUnidentified => {
+            "Der Remote-Speicher enthält unbekannte Dateien ohne Identitätsnachweis; Synchronisation verweigert"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "Die ID des Remote-Dateispeichers stimmt nicht mit der lokalen Datenbank überein; Synchronisation verweigert"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => {
+            "Anhangsdatei wird aus dem Remote-Speicher wiederhergestellt..."
+        }
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "Anhang wartet auf On-Demand-Download; Sofortwiederherstellung wird versucht"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "Remote-Objekt existiert nicht; Datei kann nicht wiederhergestellt werden"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "Lokale und Remote-Datei wurden geändert; automatisches Überschreiben verhindert"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "Fehlende Baseline oder abweichender Inhalt; Überschreiben verhindert"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "Wiederherstellung fehlgeschlagen; bitte Verbindung und Rechte prüfen"
+        }
+        I18nKey::AttachmentOpenFailedNotice => {
+            "Öffnen des Anhangs mit dem externen Programm fehlgeschlagen"
+        }
     }
 }

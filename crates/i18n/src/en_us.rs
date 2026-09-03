@@ -216,6 +216,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Sync Metadata",
         I18nKey::SyncAttachments => "Sync Attachments",
+        I18nKey::FileSyncLastRun => "Last file sync",
+        I18nKey::FileSyncSummaryUnavailable => "File sync summary unavailable",
+        I18nKey::SyncSkippedBusy => "A sync is already running; this request was not started",
+        I18nKey::SyncUploaded => "Uploaded",
+        I18nKey::SyncDownloaded => "Downloaded",
+        I18nKey::SyncDeleted => "Deleted",
+        I18nKey::SyncFailures => "Failed",
+        I18nKey::SyncWaiting => "Waiting",
+        I18nKey::SyncPendingDownload => "Pending download",
+        I18nKey::SyncUnknownDivergence => "Divergence",
+        I18nKey::SyncUnrecoverable => "Unrecoverable",
         I18nKey::DatabaseSyncInProgress => {
             "Database sync is being upgraded; file sync remains available"
         }
@@ -406,5 +417,41 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::HideOthers => "Hide Others",
         I18nKey::ShowAll => "Show All",
         I18nKey::Services => "Services",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "Initialize Remote File Storage",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "The remote file storage is empty and not initialized. Do you want to initialize it as the attachment storage for the current local library?"
+        }
+        I18nKey::FileLibraryInitializing => "Initializing remote file storage...",
+        I18nKey::FileLibraryInitSuccess => "Remote file storage initialized successfully",
+        I18nKey::FileLibraryInitFailed => "Failed to initialize remote file storage",
+        I18nKey::FileLibraryUnidentified => {
+            "Remote storage contains non-empty unrecognized files without an identity document; cannot synchronize safely"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "Remote file storage identity does not match current local database library; synchronization refused"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "Restoring attachment file from remote...",
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "Attachment is pending on-demand download; attempting instant restore"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "Remote object does not exist; file cannot be recovered"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "Both local and remote files have modified; automatic overwrite prevented"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "Missing trusted baseline or diverging contents; automatic overwrite prevented"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "Failed to restore attachment; check connection and permissions"
+        }
+        I18nKey::AttachmentOpenFailedNotice => {
+            "Failed to open attachment with the external program"
+        }
     }
 }

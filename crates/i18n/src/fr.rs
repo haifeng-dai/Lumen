@@ -216,6 +216,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Synchroniser les métadonnées",
         I18nKey::SyncAttachments => "Synchroniser les pièces jointes",
+        I18nKey::FileSyncLastRun => "Dernière synchronisation des fichiers",
+        I18nKey::FileSyncSummaryUnavailable => "Résumé de synchronisation indisponible",
+        I18nKey::SyncSkippedBusy => "Une synchronisation est déjà en cours, demande non démarrée",
+        I18nKey::SyncUploaded => "Envoyés",
+        I18nKey::SyncDownloaded => "Téléchargés",
+        I18nKey::SyncDeleted => "Supprimés",
+        I18nKey::SyncFailures => "Échecs",
+        I18nKey::SyncWaiting => "En attente",
+        I18nKey::SyncPendingDownload => "Téléchargement en attente",
+        I18nKey::SyncUnknownDivergence => "Divergences",
+        I18nKey::SyncUnrecoverable => "Irrécupérables",
         I18nKey::DatabaseSyncInProgress => {
             "La synchronisation de la base de données est en cours de mise à niveau ; la synchronisation des fichiers reste disponible"
         }
@@ -408,5 +419,43 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Purger les données supprimées",
         I18nKey::PurgeDeletedData => "Purger les données supprimées (local + distant)",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "Initialiser le stockage distant",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "Le stockage distant est vide et non initialisé. Voulez-vous l'initialiser comme stockage des pièces jointes de la bibliothèque locale actuelle ?"
+        }
+        I18nKey::FileLibraryInitializing => "Initialisation du stockage distant...",
+        I18nKey::FileLibraryInitSuccess => "Stockage distant initialisé avec succès",
+        I18nKey::FileLibraryInitFailed => "Échec de l'initialisation du stockage distant",
+        I18nKey::FileLibraryUnidentified => {
+            "Le stockage distant contient des fichiers inconnus sans document d'identité ; synchronisation impossible"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "L'identifiant du stockage distant ne correspond pas à la base de données locale ; synchronisation refusée"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => {
+            "Restauration du fichier joint depuis le stockage distant..."
+        }
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "Pièce jointe en attente de téléchargement à la demande ; restauration immédiate en cours"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "L'objet distant n'existe pas ; le fichier ne peut pas être récupéré"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "Fichiers local et distant modifiés ; écrasement automatique empêché"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "Ligne de base manquante ou divergence ; écrasement automatique empêché"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "Échec de restauration de la pièce jointe ; vérifiez la connexion et les permissions"
+        }
+        I18nKey::AttachmentOpenFailedNotice => {
+            "Échec de l'ouverture de la pièce jointe via le programme externe"
+        }
     }
 }

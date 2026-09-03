@@ -1,0 +1,30 @@
+{
+  "sandbox": {
+    "always_allow_prefixes": [
+      "cargo test",
+      "cargo check",
+      "cargo build",
+      "cargo clippy",
+      "cargo fmt",
+      "git status",
+      "git diff",
+      "git log",
+      "git show",
+      "rg"
+    ]
+  },
+  "terminal": {
+    "auto_approve_prefixes": [
+      "cargo test",
+      "cargo check",
+      "cargo build",
+      "cargo clippy",
+      "cargo fmt",
+      "git status",
+      "git diff",
+      "git log",
+      "git show",
+      "rg"
+    ]
+  }
+}

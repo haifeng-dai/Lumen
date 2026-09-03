@@ -15,10 +15,15 @@ mod literature_notes;
 mod publication;
 mod tag;
 
+mod file_library;
 mod meta;
 mod schema;
 mod sync_state;
 
+pub use file_library::{
+    AttachmentFileBaseline, AttachmentFileConflict, AttachmentPendingDownload,
+    AttachmentSyncSnapshot, FileLibraryBinding, FileSyncSummary, object_key_from_attachment_id,
+};
 pub use sync_state::{
     DatabaseSyncSummary, LocalSyncState, SyncConflict, SyncEntityKey, SyncEntityType,
     canonical_key, decode_relation_key,

@@ -355,6 +355,59 @@ impl Database {
                 [],
             )?;
 
+            // 文件同步协议状态表
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS file_library_bindings (
+                    file_library_id TEXT PRIMARY KEY,
+                    database_library_id TEXT NOT NULL,
+                    backend_kind TEXT NOT NULL,
+                    backend_fingerprint TEXT NOT NULL,
+                    protocol_version INTEGER NOT NULL,
+                    confirmed_at INTEGER NOT NULL
+                )",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS attachment_file_baselines (
+                    attachment_id TEXT NOT NULL,
+                    file_library_id TEXT NOT NULL,
+                    object_key TEXT NOT NULL,
+                    remote_version TEXT NOT NULL,
+                    local_sha256 TEXT NOT NULL,
+                    local_presence BOOLEAN NOT NULL,
+                    last_success_at INTEGER NOT NULL,
+                    PRIMARY KEY (attachment_id, file_library_id)
+                )",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS attachment_file_conflicts (
+                    attachment_id TEXT NOT NULL,
+                    file_library_id TEXT NOT NULL,
+                    object_key TEXT NOT NULL,
+                    remote_version TEXT NOT NULL,
+                    local_sha256 TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (attachment_id, file_library_id, reason)
+                )",
+                [],
+            )?;
+
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS attachment_pending_downloads (
+                    attachment_id TEXT NOT NULL,
+                    file_library_id TEXT NOT NULL,
+                    object_key TEXT NOT NULL,
+                    remote_version TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (attachment_id, file_library_id)
+                )",
+                [],
+            )?;
+
             Ok(added_sync_columns)
         })?;
 

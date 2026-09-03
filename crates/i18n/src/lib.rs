@@ -341,6 +341,17 @@ pub enum I18nKey {
     // Sync
     SyncMetadata,
     SyncAttachments,
+    FileSyncLastRun,
+    FileSyncSummaryUnavailable,
+    SyncSkippedBusy,
+    SyncUploaded,
+    SyncDownloaded,
+    SyncDeleted,
+    SyncFailures,
+    SyncWaiting,
+    SyncPendingDownload,
+    SyncUnknownDivergence,
+    SyncUnrecoverable,
     DatabaseSyncInProgress,
     DatabaseSyncNeedsInitialization,
     DatabaseSyncNeedsAdoption,
@@ -512,6 +523,24 @@ pub enum I18nKey {
     // PDF Search
     SearchInPdf,
     SearchInputPlaceholder,
+
+    // File Library Sync Dialog
+    FileLibraryInitRequiredTitle,
+    FileLibraryInitRequiredDesc,
+    FileLibraryInitializing,
+    FileLibraryInitSuccess,
+    FileLibraryInitFailed,
+    FileLibraryUnidentified,
+    FileLibraryIdentityMismatch,
+
+    // Attachment Instant Restore & Conflict Notifications
+    AttachmentRestoring,
+    AttachmentPendingDownloadNotice,
+    AttachmentUnrecoverableMissingNotice,
+    AttachmentFileConflictNotice,
+    AttachmentUnknownDivergenceNotice,
+    AttachmentRestoreFailedNotice,
+    AttachmentOpenFailedNotice,
 }
 
 impl Translatable for I18nKey {

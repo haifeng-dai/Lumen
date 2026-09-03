@@ -220,6 +220,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "Синхронизировать метаданные",
         I18nKey::SyncAttachments => "Синхронизировать вложения",
+        I18nKey::FileSyncLastRun => "Последняя синхронизация файлов",
+        I18nKey::FileSyncSummaryUnavailable => "Сводка синхронизации файлов недоступна",
+        I18nKey::SyncSkippedBusy => "Синхронизация уже выполняется, этот запрос не запущен",
+        I18nKey::SyncUploaded => "Отправлено",
+        I18nKey::SyncDownloaded => "Загружено",
+        I18nKey::SyncDeleted => "Удалено",
+        I18nKey::SyncFailures => "Ошибки",
+        I18nKey::SyncWaiting => "Ожидание",
+        I18nKey::SyncPendingDownload => "Ожидают загрузки",
+        I18nKey::SyncUnknownDivergence => "Расхождения",
+        I18nKey::SyncUnrecoverable => "Неустранимые",
         I18nKey::DatabaseSyncInProgress => {
             "Синхронизация базы данных обновляется; синхронизация файлов доступна"
         }
@@ -411,5 +422,39 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Очистить удалённые данные",
         I18nKey::PurgeDeletedData => "Полностью очистить удалённые данные (локально и удалённо)",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "Инициализация удалённого хранилища файлов",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "Удалённое хранилище пусто и не инициализировано. Инициализировать его как хранилище вложений для текущей библиотеки?"
+        }
+        I18nKey::FileLibraryInitializing => "Инициализация удалённого хранилища файлов...",
+        I18nKey::FileLibraryInitSuccess => "Удалённое хранилище файлов успешно инициализировано",
+        I18nKey::FileLibraryInitFailed => "Ошибка инициализации удалённого хранилища файлов",
+        I18nKey::FileLibraryUnidentified => {
+            "В удалённом хранилище обнаружены неизвестные файлы без идентификатора; синхронизация невозможна"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "Идентификатор удалённого хранилища файлов не совпадает с локальной базой данных; синхронизация отклонена"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "Восстановление файла вложения из удалённого хранилища...",
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "Вложение ожидает загрузки по требованию; попытка мгновенного восстановления"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "Удалённый объект не существует; файл восстановить невозможно"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "Файлы локально и удалённо изменены; автоматическая перезапись предотвращена"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "Отсутствует надёжная базовая линия или данные расходятся; перезапись предотвращена"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "Не удалось восстановить вложение; проверьте подключение и права доступа"
+        }
+        I18nKey::AttachmentOpenFailedNotice => "Не удалось открыть вложение во внешней программе",
     }
 }

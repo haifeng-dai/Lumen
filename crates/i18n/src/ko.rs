@@ -216,6 +216,17 @@ pub fn translate(key: I18nKey) -> &'static str {
         // Sync
         I18nKey::SyncMetadata => "메타데이터 동기화",
         I18nKey::SyncAttachments => "첨부 파일 동기화",
+        I18nKey::FileSyncLastRun => "마지막 파일 동기화",
+        I18nKey::FileSyncSummaryUnavailable => "파일 동기화 요약을 사용할 수 없음",
+        I18nKey::SyncSkippedBusy => "동기화가 진행 중이어서 이번 요청이 시작되지 않았습니다",
+        I18nKey::SyncUploaded => "업로드",
+        I18nKey::SyncDownloaded => "다운로드",
+        I18nKey::SyncDeleted => "삭제",
+        I18nKey::SyncFailures => "실패",
+        I18nKey::SyncWaiting => "대기",
+        I18nKey::SyncPendingDownload => "다운로드 대기",
+        I18nKey::SyncUnknownDivergence => "불일치",
+        I18nKey::SyncUnrecoverable => "복구 불가",
         I18nKey::DatabaseSyncInProgress => {
             "데이터베이스 동기화를 업그레이드하는 중입니다. 파일 동기화는 계속 사용할 수 있습니다"
         }
@@ -399,5 +410,39 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "삭제된 데이터 정리",
         I18nKey::PurgeDeletedData => "삭제된 데이터 완전 정리 (로컬 + 원격)",
+
+        // File Library Sync Dialog
+        I18nKey::FileLibraryInitRequiredTitle => "원격 파일 저장소 초기화",
+        I18nKey::FileLibraryInitRequiredDesc => {
+            "원격 저장소가 비어있고 초기화되지 않았습니다. 현재 로컬 라이브러리의 첨부파일 저장소로 초기화하시겠습니까?"
+        }
+        I18nKey::FileLibraryInitializing => "원격 파일 저장소 초기화 중...",
+        I18nKey::FileLibraryInitSuccess => "원격 파일 저장소 초기화 완료",
+        I18nKey::FileLibraryInitFailed => "원격 파일 저장소 초기화 실패",
+        I18nKey::FileLibraryUnidentified => {
+            "원격 저장소에 식별되지 않은 파일이 존재합니다. 안전을 위해 동기화할 수 없습니다"
+        }
+        I18nKey::FileLibraryIdentityMismatch => {
+            "원격 파일 저장소의 라이브러리 ID가 로컬 데이터베이스와 일치하지 않아 동기화가 거부되었습니다"
+        }
+
+        // Attachment Instant Restore & Conflict Notifications
+        I18nKey::AttachmentRestoring => "원격에서 첨부파일 복원 중...",
+        I18nKey::AttachmentPendingDownloadNotice => {
+            "주문형 다운로드 대기 중입니다. 즉시 복원을 시도합니다"
+        }
+        I18nKey::AttachmentUnrecoverableMissingNotice => {
+            "원격 객체가 존재하지 않아 파일을 복원할 수 없습니다"
+        }
+        I18nKey::AttachmentFileConflictNotice => {
+            "로컬 및 원격 파일이 모두 수정되어 자동 덮어쓰기가 차단되었습니다"
+        }
+        I18nKey::AttachmentUnknownDivergenceNotice => {
+            "신뢰할 수 있는 기준선이 없거나 내용이 분기되어 자동 덮어쓰기가 차단되었습니다"
+        }
+        I18nKey::AttachmentRestoreFailedNotice => {
+            "첨부파일 복원에 실패했습니다. 연결 및 권한을 확인하세요"
+        }
+        I18nKey::AttachmentOpenFailedNotice => "외부 프로그램으로 첨부 파일을 열지 못했습니다",
     }
 }

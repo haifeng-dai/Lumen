@@ -7,15 +7,20 @@
 //!
 //! 解耦要点：本模块不再依赖 `MainApp`。`MainApp` 在构造 `SyncService` 时注入
 //! `sync_state: Arc<Mutex<SyncStateInner>>` 与两个 `'static` 通知闭包
-//!（`notify_data` = 仅 `DataChanged`；`notify_ui` = `UiChanged`），由闭包桥接 GPUI 刷新。
+//! （`notify_data` = 仅 `DataChanged`；`notify_ui` = `UiChanged`），由闭包桥接 GPUI 刷新。
 //!
 //! 依赖 `database` + `sync`（文件传输）；上游 UI 通过 `services::app` 组合根接线，
 //! 核心不反向依赖本模块。
 
-pub(crate) mod attachments;
+pub mod attachments;
 mod engine;
-pub(crate) mod error;
 pub(crate) mod progress;
 
-pub use engine::SyncService;
-pub use progress::{DatabaseSyncStatus, SyncStateInner, SyncStatus};
+pub use attachments::{
+    FileActionPlan, FileLibraryPreflight, FileRoundSummary, PrepareAttachmentErrorKind,
+    PreparedAttachment, classify_prepare_attachment_error,
+};
+pub use engine::{SyncRunOutcome, SyncService};
+pub use progress::{
+    DatabaseSyncStatus, FileSyncStatus, FileSyncSummaryView, SyncStateInner, SyncStatus,
+};

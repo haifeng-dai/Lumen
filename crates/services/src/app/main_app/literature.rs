@@ -53,15 +53,12 @@ impl MainApp {
             lit.id
         );
         let template = self.config.lock().unwrap().filename_template.clone();
-        let renamed = self.literature_service.update_literature_details(
+        let _renamed = self.literature_service.update_literature_details(
             self.db.clone(),
             self.data_changed_notify(),
             &template,
             lit,
         )?;
-        for (id, old_filename) in renamed {
-            self.sync_service.queue_remote_rename(&id, &old_filename);
-        }
         self.notify_data_changed();
         Ok(())
     }
@@ -244,9 +241,6 @@ impl MainApp {
                             renamed_count: stats.success,
                         }));
                     }
-                }
-                for (id, old_filename) in stats.renamed {
-                    self.sync_service.queue_remote_rename(&id, &old_filename);
                 }
             }
         }
