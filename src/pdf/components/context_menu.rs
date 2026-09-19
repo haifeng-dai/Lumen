@@ -59,6 +59,71 @@ impl PdfReaderView {
         }
     }
 
+    /// 从注释 TextRange 还原纯文本（与 update_selection 的字符区间逻辑一致）
+    fn annotation_range_text(&self, ann: &services::pdf::Annotation) -> Option<String> {
+        let range = ann.range.as_ref()?;
+        let start_page = range.start_page;
+        let end_page = range.end_page.unwrap_or(start_page);
+        let start_char = range.start_char;
+        let end_char = range.end_char;
+
+        let mut selected = String::new();
+        let mut prev_y_and_height: Option<(f32, f32)> = None;
+
+        for page in start_page..=end_page {
+            let data = self.page_text_data.get(page as usize)?.as_ref()?;
+            if page > start_page && !selected.is_empty() && !selected.ends_with('\n') {
+                selected.push('\n');
+                prev_y_and_height = None;
+            }
+
+            let range_start = if page == start_page { start_char } else { 0 };
+            let range_end = if page == end_page {
+                end_char
+            } else {
+                data.chars.len().saturating_sub(1)
+            };
+
+            if range_start <= range_end && range_end < data.chars.len() {
+                for ch in &data.chars[range_start..=range_end] {
+                    if let Some((prev_y, prev_height)) = prev_y_and_height {
+                        let threshold = prev_height.max(ch.height).max(1.0) * 0.5;
+                        if (ch.y - prev_y).abs() > threshold {
+                            selected.push('\n');
+                        }
+                    }
+                    selected.push(ch.char);
+                    prev_y_and_height = Some((ch.y, ch.height));
+                }
+            }
+        }
+
+        if selected.trim().is_empty() {
+            None
+        } else {
+            Some(selected)
+        }
+    }
+
+    /// 翻译入口：Create 用划词 selected_text；Edit 用注释 TextRange。
+    /// 与划词工具栏「翻译」一致：只 translate_text(force=true)，不打开侧栏。
+    fn run_translate_from_picker(&mut self, ann_id: Option<&str>, cx: &mut Context<Self>) {
+        let text = match ann_id {
+            Some(id) => self
+                .find_annotation(id)
+                .and_then(|ann| self.annotation_range_text(&ann)),
+            None => self.selected_text.clone(),
+        };
+        let Some(text) = text.filter(|t| !t.trim().is_empty()) else {
+            return;
+        };
+
+        self.annotation_toolbar_menu = None;
+        self.annotation_context_menu = None;
+        self.annotation_state.toolbar = None;
+        self.translate_text(text, true, cx);
+    }
+
     pub(crate) fn build_annotation_context_menu(
         &mut self,
         ann_id: &str,
@@ -685,6 +750,11 @@ fn annotation_picker_items(
             services::pdf::AnnotationKind::Highlight | services::pdf::AnnotationKind::Underline
         ),
     };
+    // Edit 模式翻译读注释 TextRange；Create 模式仍读瞬时 selected_text
+    let translate_ann_id: Option<String> = match &mode {
+        AnnotationPickerMode::Create => None,
+        AnnotationPickerMode::Edit { ann_id, .. } => Some(ann_id.clone()),
+    };
 
     let mut items: Vec<PopupMenuItem> = Vec::new();
 
@@ -1021,16 +1091,13 @@ fn annotation_picker_items(
         items.push(PopupMenuItem::Separator);
 
         let weak_translate = weak_self.clone();
+        let ann_id_for_translate = translate_ann_id.clone();
         items.push(
             PopupMenuItem::new(i18n::t(I18nKey::Translate, Default::default())).on_click(
                 move |_, _window, cx| {
                     if let Some(this) = weak_translate.upgrade() {
                         this.update(cx, |this, cx| {
-                            let Some(text) = this.selected_text.clone() else {
-                                return;
-                            };
-
-                            this.translate_text(text, true, cx);
+                            this.run_translate_from_picker(ann_id_for_translate.as_deref(), cx);
                         });
                     }
                 },
