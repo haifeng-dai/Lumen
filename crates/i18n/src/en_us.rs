@@ -64,6 +64,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportAnnotatedPdfSuccess => "PDF exported (with annotations)",
         I18nKey::ExportAnnotatedPdfFailed => "Failed to export annotated PDF",
         I18nKey::ExportAnnotatedPdfNoAnnotations => "This document has no annotations to export",
+        I18nKey::ExportLibrary => "Export Library",
+        I18nKey::ExportLibrarySuccess => {
+            "Exported: {} literatures, {} attachments ({} skipped), {} annotations"
+        }
+        I18nKey::ExportLibraryFailed => "Failed to export library: {}",
+        I18nKey::ExportLibrarySelectFolder => "Select export parent folder",
         I18nKey::SelectNewFile => "Select New File",
         I18nKey::Confirm => "OK",
         I18nKey::LoadingMetadata => "Fetching metadata from remote source...",

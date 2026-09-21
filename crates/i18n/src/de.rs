@@ -70,6 +70,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportAnnotatedPdfNoAnnotations => {
             "Dieses Dokument enthält keine Anmerkungen zum Exportieren"
         }
+        I18nKey::ExportLibrary => "Bibliotheks-Backup exportieren",
+        I18nKey::ExportLibrarySuccess => {
+            "Exportiert: {} Literatur, {} Anhänge ({} übersprungen), {} Anmerkungen"
+        }
+        I18nKey::ExportLibraryFailed => "Bibliotheksexport fehlgeschlagen: {}",
+        I18nKey::ExportLibrarySelectFolder => "Exportordner wählen",
         I18nKey::SelectNewFile => "Neue Datei wählen",
         I18nKey::Confirm => "OK",
         I18nKey::LoadingMetadata => "Metadaten werden abgerufen...",

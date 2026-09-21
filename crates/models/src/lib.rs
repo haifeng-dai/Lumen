@@ -12,6 +12,7 @@ pub mod constructors;
 pub mod feed;
 pub mod fetch;
 pub mod folder;
+pub mod library_export;
 pub mod literature;
 pub mod literature_note;
 pub mod local_state;
@@ -32,6 +33,14 @@ pub use config::{
 pub use feed::{Feed, FeedItem, FeedType};
 pub use fetch::FetchSource;
 pub use folder::{Folder, FolderType};
+pub use library_export::{
+    AnnotationExportRaw, AnnotationExportRow, AttachmentExportRaw, AttachmentExportRow,
+    AuthorExportAuthor, AuthorExportRow, CitationExportRow, ExportCounts, ExportManifest,
+    FeedExportRow, FeedItemExportRow, FolderExportRow, LIBRARY_EXPORT_FORMAT,
+    LIBRARY_EXPORT_FORMAT_VERSION, LibraryExportBundle, LibraryExportReport, LibraryExportSnapshot,
+    LiteratureAuthorExportRow, LiteratureExportRow, LiteratureFolderExportRow,
+    LiteratureNoteExportRow, LiteratureTagExportRow, PublicationExportRow, TagExportRow,
+};
 pub use literature::{Literature, LiteratureType, ReadingStatus};
 pub use literature_note::LiteratureNote;
 pub use local_state::{AppUiState, PdfState, WindowState};

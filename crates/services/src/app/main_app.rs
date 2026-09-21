@@ -14,6 +14,7 @@ use translate::TranslationService;
 mod core;
 mod data;
 mod files;
+mod library_backup;
 mod literature;
 mod smart;
 mod subscription;

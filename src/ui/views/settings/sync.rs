@@ -2,7 +2,7 @@ use crate::app_state::config::ConfigStore;
 use crate::ui::notification::{NotificationType, show_notification};
 use components::{IconName, password_input};
 use gpui::prelude::*;
-use gpui::{AppContext, AsyncApp, Entity, SharedString, div, rems};
+use gpui::{AppContext, AsyncApp, Entity, PathPromptOptions, SharedString, div, rems};
 use gpui_component::{
     ActiveTheme, Icon, Sizable,
     button::{Button, ButtonVariants},
@@ -11,7 +11,7 @@ use gpui_component::{
     setting::{SettingField, SettingGroup, SettingItem, SettingPage},
     v_flex,
 };
-use i18n::{I18nKey, t};
+use i18n::{I18nKey, t, tf};
 use log::error;
 use services::app::MainApp;
 use std::sync::Arc;
@@ -635,6 +635,84 @@ impl SettingsWindow {
                             .w_full()
                             .flex_wrap()
                             .gap_2()
+                            .child(
+                                Button::new("export-library")
+                                    .label(t(I18nKey::ExportLibrary, l))
+                                    .small()
+                                    .on_click({
+                                        let app = app.clone();
+                                        let language = l;
+                                        move |_, window, cx| {
+                                            let app = app.clone();
+                                            let handle = window.window_handle();
+                                            let prompt =
+                                                t(I18nKey::ExportLibrarySelectFolder, language);
+                                            let receiver = cx.prompt_for_paths(PathPromptOptions {
+                                                files: false,
+                                                directories: true,
+                                                multiple: false,
+                                                prompt: Some(prompt.into()),
+                                            });
+                                            cx.spawn(move |async_cx: &mut AsyncApp| {
+                                                let app = app.clone();
+                                                let mut async_cx = async_cx.clone();
+                                                async move {
+                                                    let selected = match receiver.await {
+                                                        Ok(Ok(Some(paths))) if !paths.is_empty() => {
+                                                            Some(paths[0].clone())
+                                                        }
+                                                        _ => None,
+                                                    };
+                                                    let Some(dest) = selected else {
+                                                        return;
+                                                    };
+                                                    let result = app.export_library_to(&dest);
+                                                    let _ = async_cx.update_window(handle, |_, _, cx| {
+                                                        match result {
+                                                            Ok(report) => {
+                                                                let c = &report.counts;
+                                                                let summary = tf(
+                                                                    I18nKey::ExportLibrarySuccess,
+                                                                    language,
+                                                                    &[
+                                                                        &c.literatures
+                                                                            .to_string(),
+                                                                        &c.attachments
+                                                                            .to_string(),
+                                                                        &c.attachments_skipped_missing_file
+                                                                            .to_string(),
+                                                                        &c.annotations
+                                                                            .to_string(),
+                                                                    ],
+                                                                );
+                                                                show_notification(
+                                                                    NotificationType::Success,
+                                                                    format!(
+                                                                        "{summary}\n{}",
+                                                                        report.dest_dir
+                                                                    ),
+                                                                    cx,
+                                                                );
+                                                            }
+                                                            Err(e) => {
+                                                                show_notification(
+                                                                    NotificationType::Error,
+                                                                    tf(
+                                                                        I18nKey::ExportLibraryFailed,
+                                                                        language,
+                                                                        &[&e.to_string()],
+                                                                    ),
+                                                                    cx,
+                                                                );
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            })
+                                            .detach();
+                                        }
+                                    }),
+                            )
                             .child(
                                 Button::new("clear-local-db")
                                     .label(t(I18nKey::ClearLocalDb, l))

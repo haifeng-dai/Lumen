@@ -68,6 +68,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportAnnotatedPdfSuccess => "PDF экспортирован (с аннотациями)",
         I18nKey::ExportAnnotatedPdfFailed => "Не удалось экспортировать PDF с аннотациями",
         I18nKey::ExportAnnotatedPdfNoAnnotations => "В этом документе нет аннотаций для экспорта",
+        I18nKey::ExportLibrary => "Экспортировать резервную копию библиотеки",
+        I18nKey::ExportLibrarySuccess => {
+            "Экспорт завершён: {} публикаций, {} вложений ({} пропущено), {} аннотаций"
+        }
+        I18nKey::ExportLibraryFailed => "Не удалось экспортировать библиотеку: {}",
+        I18nKey::ExportLibrarySelectFolder => "Выберите папку экспорта",
         I18nKey::SelectNewFile => "Выбрать новый файл",
         I18nKey::Confirm => "ОК",
         I18nKey::LoadingMetadata => "Получение метаданных...",

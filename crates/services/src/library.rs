@@ -7,12 +7,14 @@
 
 mod annotation;
 mod attachment;
+mod backup;
 mod folder;
 mod literature;
 mod tag;
 
 pub use annotation::PdfPersistence;
 pub use attachment::AttachmentService;
+pub use backup::{export_library, normalize_document_id};
 pub use folder::FolderService;
 pub use literature::{BatchRenameFailure, BatchRenameFailureKind, LiteratureService};
 pub use tag::TagService;
