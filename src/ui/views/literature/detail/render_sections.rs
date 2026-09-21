@@ -541,6 +541,9 @@ impl super::LiteratureDetailView {
                                 theme.muted_foreground,
                                 theme,
                                 cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                    if this.editing_note_index.is_some() {
+                                        return;
+                                    }
                                     let title = "".to_string();
                                     let now = chrono::Utc::now().timestamp();
                                     this.notes_cache.push(models::LiteratureNote {

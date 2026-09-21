@@ -18,7 +18,7 @@ use gpui_component::{
     v_flex,
 };
 use i18n::{I18nKey, t, tf};
-use log::{debug, info};
+use log::{debug, error, info};
 use models::{Literature, ReadingStatus};
 use services::app::MainApp;
 use std::sync::Arc;
@@ -142,6 +142,11 @@ impl LiteratureDetailView {
     }
 
     pub fn reload_notes(&mut self, cx: &mut Context<Self>) {
+        // 编辑中重载会丢掉 temp 笔记 / 打断输入
+        if self.editing_note_index.is_some() {
+            cx.notify();
+            return;
+        }
         if let Some(lit_id) = self.state.selected_ids.first()
             && let notes = self.app.literature_service.list_notes(&self.app.db, lit_id)
         {
@@ -223,9 +228,62 @@ impl Render for LiteratureDetailView {
         let lang = self.app.current_language();
 
         if let Some(index) = self.editing_note_index {
+            let note = match self.notes_cache.get(index).cloned() {
+                Some(n) => n,
+                None => {
+                    self.editing_note_index = None;
+                    self.edit_note_title = None;
+                    self.edit_note_content = None;
+                    cx.notify();
+                    // 落入下方普通详情渲染
+                    return match &self.state.mode {
+                        DetailMode::None => div()
+                            .id("literature-detail-empty")
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(theme.muted_foreground)
+                            .bg(if theme.mode == ThemeMode::Light {
+                                theme.background
+                            } else {
+                                theme.muted
+                            })
+                            .child(t(I18nKey::NoLiteratureSelected, lang))
+                            .into_any_element(),
+                        DetailMode::Multiple(count) => div()
+                            .id("literature-detail-multiple")
+                            .size_full()
+                            .bg(if theme.mode == ThemeMode::Light {
+                                theme.background
+                            } else {
+                                theme.muted
+                            })
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .justify_center()
+                            .gap_4()
+                            .child(
+                                Icon::new(IconName::BookOpen)
+                                    .size(rems(3.0))
+                                    .text_color(theme.muted_foreground),
+                            )
+                            .child(div().text_lg().text_color(theme.foreground).child(tf(
+                                I18nKey::SelectedCount,
+                                lang,
+                                &[&count.to_string()],
+                            )))
+                            .into_any_element(),
+                        DetailMode::Single(buffer) => {
+                            self.render_single_detail(buffer, &theme, lang, window, cx)
+                        }
+                    };
+                }
+            };
+
             // 确保输入框状态在新建/编辑时都被正确初始化
             if self.edit_note_title.is_none() || self.edit_note_content.is_none() {
-                let note = &self.notes_cache[index];
                 let title = note.title.clone();
                 let content = note.content.clone();
 
@@ -244,7 +302,6 @@ impl Render for LiteratureDetailView {
                 self.edit_note_content = Some(entity2);
             }
 
-            let note = &self.notes_cache[index];
             let note_id = note.id.clone();
             let muted = theme.muted_foreground;
 
@@ -322,26 +379,49 @@ impl Render for LiteratureDetailView {
                                                         new_title.clone().unwrap_or_else(|| {
                                                             "未命名笔记".to_string()
                                                         });
-                                                    let temp_lit_id = this.notes_cache[index]
-                                                        .literature_id
-                                                        .clone();
-                                                    if let Some(real_id) =
-                                                        this.app.literature_service.create_note(
-                                                            &this.app.db,
-                                                            &temp_lit_id,
-                                                            &default_title,
-                                                        )
-                                                    {
-                                                        final_note_id = real_id;
+                                                    let temp_lit_id = this
+                                                        .notes_cache
+                                                        .get(index)
+                                                        .map(|n| n.literature_id.clone())
+                                                        .or_else(|| {
+                                                            this.state.selected_ids.first().cloned()
+                                                        });
+                                                    let Some(temp_lit_id) = temp_lit_id else {
+                                                        error!(
+                                                            "笔记保存失败: 无法确定 literature_id"
+                                                        );
+                                                        return;
+                                                    };
+                                                    match this.app.literature_service.create_note(
+                                                        &this.app.db,
+                                                        &temp_lit_id,
+                                                        &default_title,
+                                                    ) {
+                                                        Some(real_id) => {
+                                                            final_note_id = real_id
+                                                        }
+                                                        None => {
+                                                            error!(
+                                                                "笔记保存失败: create_note 返回 None (lit_id={temp_lit_id})"
+                                                            );
+                                                            return;
+                                                        }
                                                     }
                                                 }
 
-                                                let _ = this.app.literature_service.update_note(
+                                                let updated = this.app.literature_service.update_note(
                                                     &this.app.db,
                                                     &final_note_id,
                                                     new_title.as_deref(),
                                                     new_content.as_deref(),
                                                 );
+                                                if !updated {
+                                                    error!(
+                                                        "笔记保存失败: update_note 返回 false (note_id={final_note_id})"
+                                                    );
+                                                    return;
+                                                }
+
                                                 if let Some(n) = this.notes_cache.get_mut(index) {
                                                     n.id = final_note_id;
                                                     if let Some(ref t) = new_title {
