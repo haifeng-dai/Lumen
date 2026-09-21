@@ -1,4 +1,6 @@
+use crate::ui::notification::{NotificationType, show_notification};
 use components::{IconName, add_drag_behavior};
+use database;
 use gpui::prelude::*;
 use gpui::{AnyElement, FontWeight, SharedString, Window, div, px, rems, size};
 use gpui_component::{
@@ -50,7 +52,9 @@ impl super::super::MainWindow {
                 cx,
             ),
             DatabaseSyncStatus::Conflict => self.open_database_sync_conflicts(cx),
-            DatabaseSyncStatus::PartialFailure => self.open_database_sync_summary(cx),
+            DatabaseSyncStatus::PartialFailure
+            | DatabaseSyncStatus::PendingLocalChanges
+            | DatabaseSyncStatus::RemoteVersionRegression => self.open_database_sync_summary(cx),
             DatabaseSyncStatus::Idle | DatabaseSyncStatus::Error(_) => {
                 let app = self.app.clone();
                 crate::RUNTIME.spawn(async move { app.sync_service.force_sync().await });
@@ -82,6 +86,169 @@ impl super::super::MainWindow {
         self.open_modal_window(size(px(520.), px(300.)), cx, move |_window, _cx| {
             DatabaseSyncSummaryDialog::new(app, summary)
         });
+    }
+
+    /// UI-002 / OBS-001: 打开文件冲突列表
+    pub(crate) fn open_file_sync_conflicts(&mut self, cx: &mut Context<Self>) {
+        let conflicts = self
+            .app
+            .list_attachment_file_conflicts()
+            .unwrap_or_default();
+        let app = self.app.clone();
+        self.open_modal_window(size(px(700.), px(480.)), cx, move |_window, _cx| {
+            FileSyncConflictDialog::new(app, conflicts)
+        });
+    }
+}
+
+struct FileSyncConflictDialog {
+    app: Arc<MainApp>,
+    conflicts: Vec<database::sqlite::AttachmentFileConflict>,
+}
+
+impl FileSyncConflictDialog {
+    fn new(app: Arc<MainApp>, conflicts: Vec<database::sqlite::AttachmentFileConflict>) -> Self {
+        Self { app, conflicts }
+    }
+}
+
+impl Render for FileSyncConflictDialog {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let lang = self.app.current_language();
+        let app = self.app.clone();
+        let this = cx.entity().downgrade();
+        v_flex()
+            .size_full()
+            .relative()
+            .child(add_drag_behavior(
+                div()
+                    .id("file-sync-conflict-drag")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(40.0)),
+                window,
+                cx,
+            ))
+            .child(
+                h_flex().h(rems(2.5)).justify_end().px_4().child(
+                    Button::new("file-conflict-close")
+                        .ghost()
+                        .child(Icon::new(IconName::Close).size(rems(0.75)))
+                        .occlude()
+                        .on_click(|_, window, _| window.remove_window()),
+                ),
+            )
+            .p_5()
+            .gap_3()
+            .child(
+                div()
+                    .font_weight(FontWeight::BOLD)
+                    .child(t(I18nKey::FileSyncNeedsAttention, lang)),
+            )
+            .children(self.conflicts.iter().map(|c| {
+                let short_id = if c.attachment_id.len() > 8 {
+                    format!("{}…", &c.attachment_id[..8])
+                } else {
+                    c.attachment_id.clone()
+                };
+                let short_hash = if c.local_sha256.len() > 12 {
+                    format!("{}…", &c.local_sha256[..12])
+                } else {
+                    c.local_sha256.clone()
+                };
+                let reason = match c.reason.as_str() {
+                    "file_conflict" => t(I18nKey::SyncConflicts, lang).to_string(),
+                    "unknown_divergence" => t(I18nKey::SyncUnknownDivergence, lang).to_string(),
+                    other => other.to_string(),
+                };
+                let att_id = c.attachment_id.clone();
+                let att_id2 = c.attachment_id.clone();
+                let lib_id = c.file_library_id.clone();
+                let reason_id = c.reason.clone();
+                let app = app.clone();
+                let this = this.clone();
+                let this2 = this.clone();
+                div()
+                    .p_3()
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded_md()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .child(SharedString::from(format!("{} · {reason}", short_id))),
+                    )
+                    .child(div().text_xs().text_color(theme.muted_foreground).child(
+                        SharedString::from(format!(
+                            "remote={} local_hash={short_hash}",
+                            c.remote_version
+                        )),
+                    ))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .mt_2()
+                            .child(
+                                Button::new(SharedString::from(format!("dismiss-{att_id2}")))
+                                    .label(t(I18nKey::LocalData, lang))
+                                    .ghost()
+                                    .on_click(move |_, window, cx| {
+                                        if let Err(e) = app.dismiss_attachment_file_conflict(
+                                            &att_id, &lib_id, &reason_id,
+                                        ) {
+                                            show_notification(
+                                                NotificationType::Error,
+                                                format!("移除冲突失败: {e}"),
+                                                cx,
+                                            );
+                                            return;
+                                        }
+                                        if let Some(this) = this.upgrade() {
+                                            let _ = this.update(cx, |dialog, cx| {
+                                                dialog.conflicts = dialog
+                                                    .app
+                                                    .list_attachment_file_conflicts()
+                                                    .unwrap_or_default();
+                                                cx.notify();
+                                            });
+                                        }
+                                        if this.upgrade().map(|d| d.read(cx).conflicts.is_empty())
+                                            == Some(true)
+                                        {
+                                            window.remove_window();
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("recheck-{att_id2}")))
+                                    .label(t(I18nKey::CheckLocalFiles, lang))
+                                    .ghost()
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(this) = this2.upgrade() {
+                                            let _ = this.update(cx, |dialog, cx| {
+                                                dialog.conflicts = dialog
+                                                    .app
+                                                    .list_attachment_file_conflicts()
+                                                    .unwrap_or_default();
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                            ),
+                    )
+            }))
+            .child(
+                h_flex().justify_end().child(
+                    Button::new("file-conflicts-close")
+                        .label(t(I18nKey::Cancel, lang))
+                        .ghost()
+                        .on_click(|_, window, _| window.remove_window()),
+                ),
+            )
     }
 }
 
@@ -283,12 +450,73 @@ impl Render for DatabaseSyncConflictDialog {
                 let remote_this = this.clone();
                 let local_this = this.clone();
                 let key = format!("{}-{}", conflict.entity_type, conflict.entity_id);
+                // UI-001: 知情展示 — 可识别名称、时间、两侧关键字段
+                let local_val: serde_json::Value =
+                    serde_json::from_str(&conflict.local_record).unwrap_or_default();
+                let remote_val: serde_json::Value =
+                    serde_json::from_str(&conflict.remote_record).unwrap_or_default();
+                let display_name = local_val
+                    .get("title")
+                    .or_else(|| local_val.get("name"))
+                    .or_else(|| remote_val.get("title"))
+                    .or_else(|| remote_val.get("name"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        if entity_id.len() > 12 {
+                            format!("{}…", &entity_id[..12])
+                        } else {
+                            entity_id.clone()
+                        }
+                    });
+                let mut field_diff = String::new();
+                if let (Some(lo), Some(ro)) = (local_val.as_object(), remote_val.as_object()) {
+                    for k in ["title", "name", "year", "doi", "content", "color"] {
+                        if let (Some(lv), Some(rv)) = (lo.get(k), ro.get(k)) {
+                            if lv != rv {
+                                field_diff.push_str(&format!("{k}: 本地 {lv} / 远端 {rv}\n"));
+                            }
+                        }
+                    }
+                }
+                if field_diff.is_empty() {
+                    field_diff = format!("本地 {local_val}\n远端 {remote_val}");
+                }
+                let detected = chrono::DateTime::from_timestamp(conflict.detected_at, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| conflict.detected_at.to_string());
                 div()
                     .p_3()
                     .border_1()
                     .border_color(theme.border)
                     .rounded_md()
-                    .child(div().text_sm().child(SharedString::from(key.clone())))
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .child(SharedString::from(format!(
+                                "{} · {}",
+                                t(
+                                    match entity_type.as_str() {
+                                        "tags" => I18nKey::Tags,
+                                        "literatures" => I18nKey::AllLiterature,
+                                        "folders" => I18nKey::Folders,
+                                        _ => I18nKey::DatabaseSyncConflict,
+                                    },
+                                    lang
+                                ),
+                                display_name
+                            ))),
+                    )
+                    .child(div().text_xs().text_color(theme.muted_foreground).child(
+                        SharedString::from(format!(
+                            "{} {} · v{}",
+                            t(I18nKey::DatabaseSyncConflict, lang),
+                            detected,
+                            conflict.remote_version
+                        )),
+                    ))
+                    .child(div().mt_2().text_sm().child(SharedString::from(field_diff)))
                     .child(
                         h_flex()
                             .gap_2()
@@ -305,6 +533,13 @@ impl Render for DatabaseSyncConflictDialog {
                                             )
                                         {
                                             log::error!("choose remote conflict failed: {error:#}");
+                                            show_notification(
+                                                NotificationType::Error,
+                                                format!("使用远端失败: {error}"),
+                                                cx,
+                                            );
+                                            // UI-001: 失败不得关闭窗口
+                                            return;
                                         }
                                         if let Some(this) = remote_this.upgrade() {
                                             let _ = this.update(cx, |dialog, cx| {
@@ -327,6 +562,12 @@ impl Render for DatabaseSyncConflictDialog {
                                             .keep_local_database_conflict(&entity_type, &entity_id)
                                         {
                                             log::error!("keep local conflict failed: {error:#}");
+                                            show_notification(
+                                                NotificationType::Error,
+                                                format!("保留本地失败: {error}"),
+                                                cx,
+                                            );
+                                            return;
                                         }
                                         if let Some(this) = local_this.upgrade() {
                                             let _ = this.update(cx, |dialog, cx| {
@@ -392,11 +633,15 @@ impl Render for DatabaseSyncSummaryDialog {
             )
             .p_6()
             .gap_3()
-            .child(
-                div()
-                    .font_weight(FontWeight::BOLD)
-                    .child(t(I18nKey::DatabaseSyncPartialFailure, lang)),
-            )
+            .child(div().font_weight(FontWeight::BOLD).child(
+                if summary.version_regressions > 0 && summary.failures == 0 {
+                    t(I18nKey::DatabaseSyncRemoteVersionRegression, lang)
+                } else if summary.superseded > 0 && summary.failures == 0 {
+                    t(I18nKey::DatabaseSyncPendingLocalChanges, lang)
+                } else {
+                    t(I18nKey::DatabaseSyncPartialFailure, lang)
+                },
+            ))
             .child(
                 v_flex()
                     .gap_1()
@@ -419,6 +664,16 @@ impl Render for DatabaseSyncSummaryDialog {
                         "{}: {}",
                         t(I18nKey::DatabaseSyncFailuresCount, lang),
                         summary.failures
+                    ))
+                    .child(format!(
+                        "{}: {}",
+                        t(I18nKey::DatabaseSyncPendingCount, lang),
+                        summary.superseded
+                    ))
+                    .child(format!(
+                        "{}: {}",
+                        t(I18nKey::DatabaseSyncVersionRegressionsCount, lang),
+                        summary.version_regressions
                     )),
             )
             .child(

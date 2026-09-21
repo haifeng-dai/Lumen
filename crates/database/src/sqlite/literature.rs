@@ -20,6 +20,47 @@ struct RelationUpsertData {
     version: i32,
 }
 
+#[cfg(test)]
+mod generation_tests {
+    use super::*;
+    use models::Author;
+
+    #[test]
+    fn author_sort_change_advances_relation_generation_only_when_changed() {
+        let db = Database::new(":memory:").unwrap();
+        let author = Author {
+            id: "a".into(),
+            first_name: "A".into(),
+            last_name: "B".into(),
+            middle_name: None,
+            is_dirty: true,
+            is_deleted: false,
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+        };
+        db.with_conn(|c| { c.execute("INSERT INTO literature_authors (literature_id,author_id,sort_order,is_dirty,is_deleted,version,updated_at) VALUES ('l','a',0,0,0,1,0)", [])?; Database::set_authors(c, "l", &[author.clone()])?; let v: i32 = c.query_row("SELECT version FROM literature_authors", [], |r| r.get(0))?; assert_eq!(v, 1); Database::set_authors(c, "l", &[author])?; c.execute("UPDATE literature_authors SET sort_order=1,is_dirty=0 WHERE literature_id='l'", [])?; Ok(()) }).unwrap();
+        db.with_conn(|c| {
+            let author = Author {
+                id: "a".into(),
+                first_name: "A".into(),
+                last_name: "B".into(),
+                middle_name: None,
+                is_dirty: true,
+                is_deleted: false,
+                version: 1,
+                created_at: 0,
+                updated_at: 0,
+            };
+            Database::set_authors(c, "l", &[author])?;
+            let v: i32 = c.query_row("SELECT version FROM literature_authors", [], |r| r.get(0))?;
+            assert_eq!(v, 2);
+            Ok(())
+        })
+        .unwrap();
+    }
+}
+
 impl Database {
     /// 插入或全量更新文献及其关联关系
     pub fn insert_literature(&self, lit: &Literature) -> Result<()> {
@@ -747,10 +788,10 @@ impl Database {
             authors.len()
         );
         let now = Local::now().timestamp();
-        let mut stmt = conn.prepare("SELECT author_id, is_deleted, version FROM literature_authors WHERE literature_id = ?1")?;
-        let current_relations: Vec<(String, bool, i32)> = stmt
+        let mut stmt = conn.prepare("SELECT author_id, is_deleted, version, sort_order FROM literature_authors WHERE literature_id = ?1")?;
+        let current_relations: Vec<(String, bool, i32, i32)> = stmt
             .query_map([literature_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?
             .collect::<Result<Vec<_>>>()?;
         let mut canonical_authors = Vec::new();
@@ -783,7 +824,7 @@ impl Database {
 
         let target_ids: Vec<String> = canonical_authors.iter().map(|a| a.id.clone()).collect();
         let mut deleted_count = 0;
-        for (auth_id, is_deleted, version) in &current_relations {
+        for (auth_id, is_deleted, version, _) in &current_relations {
             if !target_ids.contains(auth_id) && !is_deleted {
                 conn.execute("UPDATE literature_authors SET is_deleted = 1, is_dirty = 1, version = ?1, updated_at = ?2 WHERE literature_id = ?3 AND author_id = ?4", params![version + 1, now, literature_id, auth_id])?;
                 deleted_count += 1;
@@ -799,10 +840,13 @@ impl Database {
                 literature_id, author.id, author.first_name, author.last_name, i
             );
             Database::upsert_author(conn, author)?;
-            let existing = current_relations.iter().find(|(id, _, _)| id == &author.id);
+            let existing = current_relations
+                .iter()
+                .find(|(id, _, _, _)| id == &author.id);
             match existing {
-                Some((_, is_deleted, version)) => {
-                    conn.execute("UPDATE literature_authors SET sort_order = ?1, is_deleted = 0, is_dirty = 1, version = ?2, updated_at = ?3 WHERE literature_id = ?4 AND author_id = ?5", params![i as i32, if *is_deleted { version + 1 } else { *version }, now, literature_id, author.id])?;
+                Some((_, is_deleted, version, old_sort_order)) => {
+                    let changed = *is_deleted || *old_sort_order != i as i32;
+                    conn.execute("UPDATE literature_authors SET sort_order = ?1, is_deleted = 0, is_dirty = CASE WHEN ?2 THEN 1 ELSE is_dirty END, version = CASE WHEN ?2 THEN ?3 ELSE version END, updated_at = CASE WHEN ?2 THEN ?4 ELSE updated_at END WHERE literature_id = ?5 AND author_id = ?6", params![i as i32, changed, version + 1, now, literature_id, author.id])?;
                 }
                 None => {
                     conn.execute("INSERT INTO literature_authors (literature_id, author_id, sort_order, is_dirty, is_deleted, version, updated_at) VALUES (?1, ?2, ?3, 1, 0, 1, ?4)", params![literature_id, author.id, i as i32, now])?;

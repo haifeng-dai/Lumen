@@ -20,9 +20,14 @@ pub struct LocalSyncState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseSyncSummary {
     pub uploaded: usize,
+    #[serde(default)]
+    pub superseded: usize,
     pub downloaded: usize,
     pub conflicts: usize,
     pub failures: usize,
+    /// DB-004: remote.version < synced_version observations this run.
+    #[serde(default)]
+    pub version_regressions: usize,
     pub complete: bool,
     pub updated_at: i64,
     pub identity_error: Option<String>,
@@ -760,8 +765,14 @@ mod tests {
         let db = Database::new(":memory:").unwrap();
         let tag = db.create_tag("local", None).unwrap();
         db.set_identity_state("library", "fingerprint", 42).unwrap();
-        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 7)
-            .unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            7,
+        )
+        .unwrap();
 
         db.reset_database_sync_state_after_remote_clear().unwrap();
 

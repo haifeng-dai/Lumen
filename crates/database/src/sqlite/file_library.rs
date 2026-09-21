@@ -602,6 +602,44 @@ impl Database {
         })
     }
 
+    /// STATE-002: 全库未解决文件冲突总数（跨 file_library_id）
+    pub fn count_attachment_file_conflicts(&self) -> Result<usize> {
+        self.with_conn(|conn| {
+            let n: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM attachment_file_conflicts",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok(n as usize)
+        })
+    }
+
+    /// UI-002: 列出全部文件冲突（跨 file_library_id）
+    pub fn list_all_file_conflicts(&self) -> Result<Vec<AttachmentFileConflict>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT attachment_id, file_library_id, object_key, remote_version, local_sha256, reason, created_at
+                 FROM attachment_file_conflicts ORDER BY created_at ASC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(AttachmentFileConflict {
+                    attachment_id: row.get(0)?,
+                    file_library_id: row.get(1)?,
+                    object_key: row.get(2)?,
+                    remote_version: row.get(3)?,
+                    local_sha256: row.get(4)?,
+                    reason: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })?;
+            let mut conflicts = Vec::new();
+            for item in rows {
+                conflicts.push(item?);
+            }
+            Ok(conflicts)
+        })
+    }
+
     /// 获取特定附件在特定文件库下的所有冲突记录（如 file_conflict 与 unknown_divergence）
     pub fn get_attachment_file_conflicts(
         &self,
@@ -1649,9 +1687,10 @@ mod tests {
         let db = create_test_db();
         let confirmed = "550e8400-e29b-41d4-a716-446655440000";
         let unconfirmed = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        // synced_version >= version 且 is_dirty=0 → 可确认
+        // database 只暴露字段；确认裁决在 services（FILE-004：!dirty && synced_version>0）
+        // synced_version 落后于本地 version 但 is_dirty=0 → 上传确认后的正常双时钟状态
         insert_attachment_with_sync_state(&db, confirmed, 3, 3, 0, 0);
-        // synced_version 落后 → 不得确认
+        // 合并多次本地编辑后确认：version > synced_version 且 clean
         insert_attachment_with_sync_state(&db, unconfirmed, 5, 2, 0, 0);
 
         let snapshots = db.attachment_sync_snapshots().unwrap();

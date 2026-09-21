@@ -90,9 +90,17 @@ impl MainApp {
         let sync_service = Arc::new(sync_service);
         let db = sync_service.db.clone();
         let file_manager = sync_service.file_manager.clone();
+        // STATE-002: 启动时从持久化冲突恢复同步状态提醒
+        if let Err(e) = sync_service.restore_status_from_persistent_conflicts() {
+            debug!("MainApp: 恢复持久化冲突状态失败: {e}");
+        }
+        if let Err(e) = sync_service.restore_file_status_from_persistent_conflicts() {
+            debug!("MainApp: 恢复文件冲突状态失败: {e}");
+        }
         (
             Self {
                 sync_state,
+                dangerous_op_confirm: Mutex::new(None),
                 refresh_tx,
                 literature_service: Arc::new(LiteratureService::new()),
                 attachment_service: Arc::new(AttachmentService::new()),
@@ -115,6 +123,27 @@ impl MainApp {
             },
             sync_rx,
         )
+    }
+
+    /// OPS-001: 危险维护操作二次确认。
+    /// - 同步运行中：返回 Err
+    /// - 首次调用：记录 op，返回 Ok(false)（UI 提示再次点击）
+    /// - 30s 内对同一 op 再次调用：清除确认，返回 Ok(true)（允许执行）
+    pub fn begin_dangerous_op(&self, op: &str) -> Result<bool> {
+        if self.sync_service.is_sync_running() {
+            return Err(anyhow::anyhow!(
+                "同步正在进行中，请等待完成后再执行维护操作"
+            ));
+        }
+        let mut slot = self.dangerous_op_confirm.lock().unwrap();
+        if let Some((prev, at)) = slot.as_ref() {
+            if prev == op && at.elapsed() < std::time::Duration::from_secs(30) {
+                *slot = None;
+                return Ok(true);
+            }
+        }
+        *slot = Some((op.to_string(), std::time::Instant::now()));
+        Ok(false)
     }
 
     pub fn update_config(&self, new_config: AppConfig) -> Result<()> {
@@ -297,6 +326,31 @@ impl MainApp {
         &self,
     ) -> Result<Vec<crate::database_sync::UiDatabaseSyncConflict>> {
         self.sync_service.list_database_sync_conflicts()
+    }
+
+    /// UI-002: 文件冲突列表
+    pub fn list_attachment_file_conflicts(
+        &self,
+    ) -> Result<Vec<database::sqlite::AttachmentFileConflict>> {
+        self.sync_service.list_all_file_conflicts()
+    }
+
+    pub fn dismiss_attachment_file_conflict(
+        &self,
+        attachment_id: &str,
+        file_library_id: &str,
+        reason: &str,
+    ) -> Result<()> {
+        self.sync_service
+            .dismiss_file_conflict(attachment_id, file_library_id, "", reason)
+    }
+
+    /// OBS-001: 读取复合 flags（冲突计数等）
+    pub fn sync_composite_flags(&self) -> crate::sync::SyncCompositeFlags {
+        self.sync_state
+            .lock()
+            .map(|s| s.composite.clone())
+            .unwrap_or_default()
     }
 
     pub fn choose_remote_database_conflict(

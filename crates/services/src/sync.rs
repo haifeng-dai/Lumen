@@ -22,5 +22,6 @@ pub use attachments::{
 };
 pub use engine::{SyncRunOutcome, SyncService};
 pub use progress::{
-    DatabaseSyncStatus, FileSyncStatus, FileSyncSummaryView, SyncStateInner, SyncStatus,
+    DatabaseSyncStatus, FileSyncStatus, FileSyncSummaryView, SyncCompositeFlags, SyncStateInner,
+    SyncStatus,
 };

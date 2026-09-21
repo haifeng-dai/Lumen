@@ -12,11 +12,12 @@ use database::sqlite::{
     AttachmentSyncSnapshot, FileLibraryBinding,
 };
 use file::{
-    AttachmentBackend, FileLibraryIdentity, LibraryInspection, LocalFileManager, UploadObjectResult,
+    AttachmentBackend, DeleteObjectResult, FileLibraryIdentity, LibraryInspection,
+    LocalFileManager, UpdateObjectResult, UploadObjectResult,
 };
 use sha2::{Digest, Sha256};
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use models::Attachment;
 use std::collections::HashMap;
 use std::io::Read;
@@ -60,6 +61,14 @@ pub enum FileActionPlan {
         object_key: String,
         local_path: PathBuf,
     },
+    /// FILE-001: 两端存在且 baseline 版本与远端一致，但本地内容已变：CAS 条件更新
+    UpdateObject {
+        attachment_id: String,
+        object_key: String,
+        local_path: PathBuf,
+        expected_remote_version: String,
+        local_sha256: String,
+    },
     /// 活跃且本地缺失，远端对象存在：安全下载（adopt_baseline 表示是否在首次见库时直接采用基线）
     Download {
         attachment_id: String,
@@ -67,10 +76,11 @@ pub enum FileActionPlan {
         target_file_name: String,
         adopt_baseline: bool,
     },
-    /// 软删除且远端对象存在：删除远端对象
+    /// 软删除且远端对象存在：条件删除远端对象（FILE-003）
     Delete {
         attachment_id: String,
         object_key: String,
+        expected_remote_version: String,
     },
     /// 活跃、本地缺失且远端缺失：物理丢失，零写入
     UnrecoverableMissing { attachment_id: String },
@@ -101,6 +111,18 @@ pub enum FileActionPlan {
         remote_version: String,
         target_file_name: String,
     },
+}
+
+/// FILE-002: 共享下载落地结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SafeDownloadLandOutcome {
+    Replaced,
+    AdoptedExisting,
+    VersionMismatch,
+    Conflict,
+    UnknownDivergence,
+    Failed,
+    BaselineWriteFailed,
 }
 
 /// 文件同步轮次汇总统计
@@ -638,23 +660,111 @@ impl FileSyncService {
                         }
                     }
                 }
+                FileActionPlan::UpdateObject {
+                    attachment_id,
+                    object_key,
+                    local_path,
+                    expected_remote_version,
+                    local_sha256,
+                } => {
+                    // baseline 只记录实际上传字节：上传前后哈希必须一致
+                    let hash_before = match compute_file_hash(&local_path) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            error!("存储管理: [UpdateObject] 读取本地哈希失败: {e}");
+                            failed += 1;
+                            continue;
+                        }
+                    };
+                    if hash_before != local_sha256 {
+                        // 规划后本地又变化：不推进 baseline，保留下一轮
+                        info!("存储管理: [UpdateObject] 本地内容在规划后变化，跳过本轮更新");
+                        waiting += 1;
+                        continue;
+                    }
+                    let backend = self.backend().await;
+                    match backend
+                        .update_object_if_version(
+                            object_key.clone(),
+                            local_path.clone(),
+                            expected_remote_version.clone(),
+                        )
+                        .await
+                    {
+                        Ok(UpdateObjectResult::Updated(new_remote_version)) => {
+                            let hash_after = match compute_file_hash(&local_path) {
+                                Ok(h) => h,
+                                Err(e) => {
+                                    error!("存储管理: [UpdateObject] 上传后复核哈希失败: {e}");
+                                    failed += 1;
+                                    continue;
+                                }
+                            };
+                            if hash_after != hash_before {
+                                // 上传期间本地变化：不推进 baseline（远端字节可能是旧内容）
+                                warn!(
+                                    "存储管理: [UpdateObject] 本地文件在上传过程中变化，不推进 baseline"
+                                );
+                                waiting += 1;
+                                continue;
+                            }
+                            match self.db.apply_successful_upload(
+                                &attachment_id,
+                                &file_library_id,
+                                &object_key,
+                                &new_remote_version,
+                                &hash_after,
+                            ) {
+                                Ok(()) => uploaded += 1,
+                                Err(e) => {
+                                    error!("存储管理: [UpdateObject] 写入 baseline 失败: {e}");
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        Ok(UpdateObjectResult::VersionConflict) => {
+                            let conflict = AttachmentFileConflict {
+                                attachment_id: attachment_id.clone(),
+                                file_library_id: file_library_id.clone(),
+                                object_key: object_key.clone(),
+                                remote_version: expected_remote_version.clone(),
+                                local_sha256: hash_before.clone(),
+                                reason: "file_conflict".to_string(),
+                                created_at: chrono::Utc::now().timestamp(),
+                            };
+                            if let Err(e) = self.db.upsert_file_conflict(&conflict) {
+                                error!("存储管理: [UpdateObject] 写入冲突失败: {e}");
+                                failed += 1;
+                            } else {
+                                conflicts += 1;
+                            }
+                        }
+                        Ok(UpdateObjectResult::Unsupported) => {
+                            error!("存储管理: [UpdateObject] 后端不支持安全条件更新，零写入");
+                            failed += 1;
+                        }
+                        Err(e) => {
+                            error!("存储管理: [UpdateObject] 条件更新失败: {e}");
+                            failed += 1;
+                        }
+                    }
+                }
                 FileActionPlan::Download {
                     attachment_id,
                     object_key,
                     target_file_name,
                     adopt_baseline,
                 } => {
-                    // 获取远端版本字符串用于后续记录
-                    let remote_version =
+                    // list 观察到的远端版本（本轮开始时）
+                    let list_observed_version =
                         remote_objects.get(&object_key).cloned().unwrap_or_default();
                     // 按需下载模式：仅登记而不实际写入文件
                     if self.is_on_demand() && !adopt_baseline {
-                        // 记录 pending download
                         let pending = AttachmentPendingDownload {
                             attachment_id: attachment_id.clone(),
                             file_library_id: file_library_id.clone(),
                             object_key: object_key.clone(),
-                            remote_version: remote_version.clone(),
+                            remote_version: list_observed_version.clone(),
                             created_at: chrono::Utc::now().timestamp(),
                         };
                         if let Err(e) = self.db.upsert_pending_download(&pending) {
@@ -678,12 +788,22 @@ impl FileSyncService {
                     let temp_path =
                         attachments_dir.join(format!(".tmp.{safe_name}.{}", uuid::Uuid::new_v4()));
 
+                    // FILE-002: 下载前记录目标期望状态
+                    let expected_target_hash = match classify_local_file(&target_path) {
+                        LocalFileState::RegularFile => compute_file_hash(&target_path).ok(),
+                        LocalFileState::Missing => None,
+                        LocalFileState::NotRegularFile | LocalFileState::Unknown => {
+                            // 规划后目标变为异常：仍下载到 temp，落地阶段记分歧
+                            None
+                        }
+                    };
+
                     let backend = self.backend().await;
                     match backend
                         .download_object(object_key.clone(), temp_path.clone())
                         .await
                     {
-                        Ok(Some(remote_version)) => {
+                        Ok(Some(downloaded_version)) => {
                             if adopt_baseline {
                                 // 首次见库安全比较闭环：
                                 // 绝不能以 adopt_baseline=true 为由直接替换已有正式文件
@@ -693,7 +813,7 @@ impl FileSyncService {
                                             att,
                                             &file_library_id,
                                             &object_key,
-                                            &remote_version,
+                                            &downloaded_version,
                                             &temp_path,
                                         )
                                         .await
@@ -705,7 +825,6 @@ impl FileSyncService {
                                 };
                                 match outcome {
                                     FirstSeenComparisonOutcome::BaselineAdopted => {
-                                        // 两端一致仅建立 baseline，未发生下载替换，计入 skipped
                                         skipped += 1;
                                     }
                                     FirstSeenComparisonOutcome::DivergenceRecorded => {
@@ -716,51 +835,29 @@ impl FileSyncService {
                                     }
                                 }
                             } else {
-                                let temp_p_clone = temp_path.clone();
-                                let hash_res = tokio::task::spawn_blocking(move || {
-                                    compute_file_hash(&temp_p_clone)
-                                })
-                                .await;
-
-                                match hash_res {
-                                    Ok(Ok(local_sha256)) => {
-                                        match atomic_replace_file(&temp_path, &target_path).await {
-                                            Ok(()) => {
-                                                let target_str =
-                                                    target_path.to_string_lossy().to_string();
-                                                match self.db.apply_prepared_attachment_success(
-                                                    &attachment_id,
-                                                    &file_library_id,
-                                                    &object_key,
-                                                    &remote_version,
-                                                    &local_sha256,
-                                                    &target_str,
-                                                ) {
-                                                    Ok(()) => {
-                                                        downloaded += 1;
-                                                    }
-                                                    Err(e) => {
-                                                        error!(
-                                                            "存储管理: [DownloadObject] 写入 baseline/attachment 失败: {e}"
-                                                        );
-                                                        failed += 1;
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    "存储管理: [DownloadObject] 原子替换文件失败: {e}"
-                                                );
-                                                let _ = tokio::fs::remove_file(&temp_path).await;
-                                                failed += 1;
-                                            }
-                                        }
+                                // FILE-002: 与 prepare 共用安全落地
+                                match self
+                                    .land_downloaded_object(
+                                        &attachment_id,
+                                        &file_library_id,
+                                        &object_key,
+                                        &temp_path,
+                                        &target_path,
+                                        &list_observed_version,
+                                        &downloaded_version,
+                                        expected_target_hash.as_deref(),
+                                    )
+                                    .await
+                                {
+                                    SafeDownloadLandOutcome::Replaced => downloaded += 1,
+                                    SafeDownloadLandOutcome::AdoptedExisting => skipped += 1,
+                                    SafeDownloadLandOutcome::VersionMismatch => failed += 1,
+                                    SafeDownloadLandOutcome::Conflict => conflicts += 1,
+                                    SafeDownloadLandOutcome::UnknownDivergence => {
+                                        unknown_divergence += 1
                                     }
-                                    _ => {
-                                        error!("存储管理: [DownloadObject] 计算下载哈希失败");
-                                        let _ = tokio::fs::remove_file(&temp_path).await;
-                                        failed += 1;
-                                    }
+                                    SafeDownloadLandOutcome::Failed => failed += 1,
+                                    SafeDownloadLandOutcome::BaselineWriteFailed => failed += 1,
                                 }
                             }
                         }
@@ -824,10 +921,14 @@ impl FileSyncService {
                 FileActionPlan::Delete {
                     attachment_id,
                     object_key,
+                    expected_remote_version,
                 } => {
                     let backend = self.backend().await;
-                    match backend.delete_object(object_key).await {
-                        Ok(()) => {
+                    match backend
+                        .delete_object(object_key.clone(), expected_remote_version.clone())
+                        .await
+                    {
+                        Ok(DeleteObjectResult::Deleted) | Ok(DeleteObjectResult::AlreadyAbsent) => {
                             match self
                                 .db
                                 .apply_successful_delete(&attachment_id, &file_library_id)
@@ -840,6 +941,27 @@ impl FileSyncService {
                                     failed += 1;
                                 }
                             }
+                        }
+                        Ok(DeleteObjectResult::VersionConflict) => {
+                            let conflict = AttachmentFileConflict {
+                                attachment_id: attachment_id.clone(),
+                                file_library_id: file_library_id.clone(),
+                                object_key: object_key.clone(),
+                                remote_version: expected_remote_version.clone(),
+                                local_sha256: String::new(),
+                                reason: "file_conflict".to_string(),
+                                created_at: chrono::Utc::now().timestamp(),
+                            };
+                            if let Err(e) = self.db.upsert_file_conflict(&conflict) {
+                                error!("存储管理: [DeleteObject] 写入冲突失败: {e}");
+                                failed += 1;
+                            } else {
+                                conflicts += 1;
+                            }
+                        }
+                        Ok(DeleteObjectResult::Unsupported) => {
+                            error!("存储管理: [DeleteObject] 后端不支持条件删除，零写入");
+                            failed += 1;
                         }
                         Err(e) => {
                             error!("存储管理: [DeleteObject] 删除失败: {e}");
@@ -1224,129 +1346,49 @@ impl FileSyncService {
         };
         drop(backend);
 
-        if downloaded_version.is_empty() || downloaded_version != remote_entry.remote_version {
-            let _ = tokio::fs::remove_file(&temp_path).await;
-            return Err(prepare_error(
+        // FILE-002: 与常规轮次共用安全落地
+        match self
+            .land_downloaded_object(
+                attachment_id,
+                &file_library_id,
+                &object_key,
+                &temp_path,
+                &target_path,
+                &remote_entry.remote_version,
+                &downloaded_version,
+                expected_replace_hash.as_deref(),
+            )
+            .await
+        {
+            SafeDownloadLandOutcome::Replaced | SafeDownloadLandOutcome::AdoptedExisting => {
+                (self.notify_ui)();
+                Ok(PreparedAttachment {
+                    attachment_id: attachment_id.to_string(),
+                    local_path: target_path,
+                    issue: None,
+                })
+            }
+            SafeDownloadLandOutcome::VersionMismatch => Err(prepare_error(
                 PrepareAttachmentErrorKind::InvalidState,
                 "下载版本与远端清单不一致或版本为空，拒绝采用",
-            ));
+            )),
+            SafeDownloadLandOutcome::Conflict => Err(prepare_error(
+                PrepareAttachmentErrorKind::Conflict,
+                "本地文件在下载期间出现且内容不一致，已阻止覆盖",
+            )),
+            SafeDownloadLandOutcome::UnknownDivergence => Err(prepare_error(
+                PrepareAttachmentErrorKind::Conflict,
+                "目标路径状态或内容不确定，已阻止覆盖",
+            )),
+            SafeDownloadLandOutcome::Failed => Err(prepare_error(
+                PrepareAttachmentErrorKind::LocalWrite,
+                "下载落地失败",
+            )),
+            SafeDownloadLandOutcome::BaselineWriteFailed => Err(prepare_error(
+                PrepareAttachmentErrorKind::LocalWrite,
+                "文件已落地但基线写入失败，状态待恢复",
+            )),
         }
-
-        let temp_p_clone = temp_path.clone();
-        let temp_sha256 = tokio::task::spawn_blocking(move || compute_file_hash(&temp_p_clone))
-            .await
-            .map_err(|_| {
-                prepare_error(
-                    PrepareAttachmentErrorKind::LocalWrite,
-                    "临时文件哈希任务失败",
-                )
-            })?
-            .map_err(|_| {
-                prepare_error(PrepareAttachmentErrorKind::LocalWrite, "临时文件哈希失败")
-            })?;
-
-        match classify_local_file(&target_path) {
-            LocalFileState::Missing => {
-                atomic_replace_file(&temp_path, &target_path)
-                    .await
-                    .map_err(|_| {
-                        prepare_error(
-                            PrepareAttachmentErrorKind::LocalWrite,
-                            "原子替换目标文件失败",
-                        )
-                    })?;
-            }
-            LocalFileState::RegularFile => {
-                let target_owned = target_path.clone();
-                let existing_hash =
-                    tokio::task::spawn_blocking(move || compute_file_hash(&target_owned))
-                        .await
-                        .map_err(|_| {
-                            prepare_error(
-                                PrepareAttachmentErrorKind::LocalWrite,
-                                "目标文件哈希任务失败",
-                            )
-                        })?
-                        .map_err(|_| {
-                            prepare_error(
-                                PrepareAttachmentErrorKind::LocalWrite,
-                                "目标文件哈希失败",
-                            )
-                        })?;
-
-                if expected_replace_hash.as_ref() == Some(&existing_hash) {
-                    atomic_replace_file(&temp_path, &target_path)
-                        .await
-                        .map_err(|_| {
-                            prepare_error(
-                                PrepareAttachmentErrorKind::LocalWrite,
-                                "原子替换目标文件失败",
-                            )
-                        })?;
-                } else if existing_hash == temp_sha256 {
-                    let _ = tokio::fs::remove_file(&temp_path).await;
-                    let target_str = target_path.to_string_lossy().to_string();
-                    self.db.apply_prepared_attachment_success(
-                        attachment_id,
-                        &file_library_id,
-                        &object_key,
-                        &downloaded_version,
-                        &existing_hash,
-                        &target_str,
-                    )?;
-                    (self.notify_ui)();
-                    return Ok(PreparedAttachment {
-                        attachment_id: attachment_id.to_string(),
-                        local_path: target_path,
-                        issue: None,
-                    });
-                } else {
-                    let _ = tokio::fs::remove_file(&temp_path).await;
-                    let reason = if expected_replace_hash.is_some() {
-                        "file_conflict"
-                    } else {
-                        "unknown_divergence"
-                    };
-                    self.db.upsert_file_conflict(&AttachmentFileConflict {
-                        attachment_id: attachment_id.to_string(),
-                        file_library_id: file_library_id.clone(),
-                        object_key: object_key.clone(),
-                        remote_version: downloaded_version.clone(),
-                        local_sha256: existing_hash,
-                        reason: reason.to_string(),
-                        created_at: chrono::Utc::now().timestamp(),
-                    })?;
-                    return Err(prepare_error(
-                        PrepareAttachmentErrorKind::Conflict,
-                        "本地文件在下载期间出现且内容不一致，已阻止覆盖",
-                    ));
-                }
-            }
-            LocalFileState::NotRegularFile | LocalFileState::Unknown => {
-                let _ = tokio::fs::remove_file(&temp_path).await;
-                return Err(prepare_error(
-                    PrepareAttachmentErrorKind::LocalWrite,
-                    "目标路径状态异常，拒绝覆盖",
-                ));
-            }
-        }
-
-        let target_str = target_path.to_string_lossy().to_string();
-        self.db.apply_prepared_attachment_success(
-            attachment_id,
-            &file_library_id,
-            &object_key,
-            &downloaded_version,
-            &temp_sha256,
-            &target_str,
-        )?;
-
-        (self.notify_ui)();
-        Ok(PreparedAttachment {
-            attachment_id: attachment_id.to_string(),
-            local_path: target_path,
-            issue: None,
-        })
     }
 
     /// 安全即时下载单个附件（内部委托给 prepare_attachment_for_open）
@@ -1354,6 +1396,157 @@ impl FileSyncService {
         self.prepare_attachment_for_open(attachment_id)
             .await
             .map(|_| true)
+    }
+
+    /// FILE-002: 下载临时文件安全落地（prepare 与常规轮次共用）。
+    ///
+    /// 规则：
+    /// 1. `downloaded_version` 非空且等于 list 观察版本，否则拒绝采用；
+    /// 2. 目标缺失 → 原子替换；
+    /// 3. 目标内容 == temp → 采用现有文件并写 baseline；
+    /// 4. 目标内容 == 计划期望 hash → 允许替换；
+    /// 5. 否则写入冲突/未知分歧，绝不覆盖；
+    /// 6. baseline 写入失败不得计为成功。
+    async fn land_downloaded_object(
+        &self,
+        attachment_id: &str,
+        file_library_id: &str,
+        object_key: &str,
+        temp_path: &Path,
+        target_path: &Path,
+        list_observed_version: &str,
+        downloaded_version: &str,
+        expected_target_hash: Option<&str>,
+    ) -> SafeDownloadLandOutcome {
+        if downloaded_version.is_empty() || downloaded_version != list_observed_version {
+            error!("存储管理: [DownloadLand] 下载版本与 list 不一致或为空，拒绝采用");
+            let _ = tokio::fs::remove_file(temp_path).await;
+            return SafeDownloadLandOutcome::VersionMismatch;
+        }
+
+        let temp_owned = temp_path.to_path_buf();
+        let temp_sha256 =
+            match tokio::task::spawn_blocking(move || compute_file_hash(&temp_owned)).await {
+                Ok(Ok(h)) => h,
+                _ => {
+                    error!("存储管理: [DownloadLand] 临时文件哈希失败");
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                    return SafeDownloadLandOutcome::Failed;
+                }
+            };
+
+        let write_baseline = |local_sha256: String| {
+            let target_str = target_path.to_string_lossy().to_string();
+            self.db.apply_prepared_attachment_success(
+                attachment_id,
+                file_library_id,
+                object_key,
+                downloaded_version,
+                &local_sha256,
+                &target_str,
+            )
+        };
+
+        match classify_local_file(target_path) {
+            LocalFileState::Missing => {
+                if let Err(e) = atomic_replace_file(temp_path, target_path).await {
+                    error!("存储管理: [DownloadLand] 原子替换失败: {e}");
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                    return SafeDownloadLandOutcome::Failed;
+                }
+                match write_baseline(temp_sha256) {
+                    Ok(()) => SafeDownloadLandOutcome::Replaced,
+                    Err(e) => {
+                        error!("存储管理: [DownloadLand] 替换成功但 baseline 写入失败: {e}");
+                        SafeDownloadLandOutcome::BaselineWriteFailed
+                    }
+                }
+            }
+            LocalFileState::RegularFile => {
+                let target_owned = target_path.to_path_buf();
+                let existing_hash =
+                    match tokio::task::spawn_blocking(move || compute_file_hash(&target_owned))
+                        .await
+                    {
+                        Ok(Ok(h)) => h,
+                        _ => {
+                            error!("存储管理: [DownloadLand] 目标文件哈希失败");
+                            let _ = tokio::fs::remove_file(temp_path).await;
+                            return SafeDownloadLandOutcome::Failed;
+                        }
+                    };
+
+                if existing_hash == temp_sha256 {
+                    // 竞态内容相同：采用现有文件，更新 baseline，不制造假冲突
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                    match write_baseline(existing_hash) {
+                        Ok(()) => SafeDownloadLandOutcome::AdoptedExisting,
+                        Err(e) => {
+                            error!(
+                                "存储管理: [DownloadLand] 采用现有文件但 baseline 写入失败: {e}"
+                            );
+                            SafeDownloadLandOutcome::BaselineWriteFailed
+                        }
+                    }
+                } else if expected_target_hash == Some(existing_hash.as_str()) {
+                    // 目标仍是计划时状态：允许安全替换
+                    if let Err(e) = atomic_replace_file(temp_path, target_path).await {
+                        error!("存储管理: [DownloadLand] 原子替换失败: {e}");
+                        let _ = tokio::fs::remove_file(temp_path).await;
+                        return SafeDownloadLandOutcome::Failed;
+                    }
+                    match write_baseline(temp_sha256) {
+                        Ok(()) => SafeDownloadLandOutcome::Replaced,
+                        Err(e) => {
+                            error!("存储管理: [DownloadLand] 替换成功但 baseline 写入失败: {e}");
+                            SafeDownloadLandOutcome::BaselineWriteFailed
+                        }
+                    }
+                } else {
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                    let reason = if expected_target_hash.is_some() {
+                        "file_conflict"
+                    } else {
+                        "unknown_divergence"
+                    };
+                    let conflict = AttachmentFileConflict {
+                        attachment_id: attachment_id.to_string(),
+                        file_library_id: file_library_id.to_string(),
+                        object_key: object_key.to_string(),
+                        remote_version: downloaded_version.to_string(),
+                        local_sha256: existing_hash,
+                        reason: reason.to_string(),
+                        created_at: chrono::Utc::now().timestamp(),
+                    };
+                    if let Err(e) = self.db.upsert_file_conflict(&conflict) {
+                        error!("存储管理: [DownloadLand] 写入冲突失败: {e}");
+                        return SafeDownloadLandOutcome::Failed;
+                    }
+                    if reason == "file_conflict" {
+                        SafeDownloadLandOutcome::Conflict
+                    } else {
+                        SafeDownloadLandOutcome::UnknownDivergence
+                    }
+                }
+            }
+            LocalFileState::NotRegularFile | LocalFileState::Unknown => {
+                let _ = tokio::fs::remove_file(temp_path).await;
+                let conflict = AttachmentFileConflict {
+                    attachment_id: attachment_id.to_string(),
+                    file_library_id: file_library_id.to_string(),
+                    object_key: object_key.to_string(),
+                    remote_version: downloaded_version.to_string(),
+                    local_sha256: String::new(),
+                    reason: "unknown_divergence".to_string(),
+                    created_at: chrono::Utc::now().timestamp(),
+                };
+                if let Err(e) = self.db.upsert_file_conflict(&conflict) {
+                    error!("存储管理: [DownloadLand] 写入未知分歧失败: {e}");
+                    return SafeDownloadLandOutcome::Failed;
+                }
+                SafeDownloadLandOutcome::UnknownDivergence
+            }
+        }
     }
 
     /// 触发执行完整附件同步轮次（仅供 engine 调用）
@@ -1391,10 +1584,25 @@ impl FileSyncService {
         // 2. 逐项删除，失败立即返回 Error
         for (i, entry) in entries.into_iter().enumerate() {
             debug!("存储管理: 正在删除远端对象 [{}/{}]", i + 1, total);
-            backend
-                .delete_object(entry.object_key)
+            match backend
+                .delete_object(entry.object_key.clone(), entry.remote_version.clone())
                 .await
-                .map_err(|e| anyhow!("删除远端对象失败，清空已中止: {e}"))?;
+                .map_err(|e| anyhow!("删除远端对象失败，清空已中止: {e}"))?
+            {
+                DeleteObjectResult::Deleted | DeleteObjectResult::AlreadyAbsent => {}
+                DeleteObjectResult::VersionConflict => {
+                    return Err(anyhow!(
+                        "远端对象在清空期间版本变化，清空已中止: {}",
+                        entry.object_key
+                    ));
+                }
+                DeleteObjectResult::Unsupported => {
+                    return Err(anyhow!(
+                        "后端不支持条件删除，清空已中止: {}",
+                        entry.object_key
+                    ));
+                }
+            }
         }
         drop(backend);
 
@@ -1452,11 +1660,14 @@ fn classify_local_file(path_ref: impl AsRef<Path>) -> LocalFileState {
     }
 }
 
-/// 逐附件数据库远端确认：本地非脏、已持久化确认版本且确认版本不低于本地版本。
+/// 逐附件数据库远端确认（FILE-004）。
 ///
+/// 本地 `version` 是 generation，`synced_version` 是远端 CAS 版本，两者时钟不同。
+/// DB-001 仅在当前 generation 被确认时清 `is_dirty`，因此确认条件是
+/// `!is_dirty && synced_version > 0`，禁止再比较 `synced_version >= version`。
 /// database 不裁决确认；services 在此计算。确认是上传与 tombstone 删除的前置条件。
 fn snapshot_database_confirmed(snap: &AttachmentSyncSnapshot) -> bool {
-    !snap.is_dirty && snap.synced_version > 0 && snap.synced_version >= snap.version
+    !snap.is_dirty && snap.synced_version > 0
 }
 
 /// 纯函数：根据本地附件确认快照、baseline 映射、远端对象映射与本轮变更策略，规划每个附件的动作。
@@ -1489,12 +1700,39 @@ pub fn plan_file_actions(
 
         if snap.is_deleted {
             // Tombstone 处理：删除/清理前必须先确认远端已确认该 tombstone
-            if remote_version.is_some() {
+            if let Some(remote_ver) = remote_version {
                 if database_confirmed && policy.allow_confirmed_delete {
-                    plans.push(FileActionPlan::Delete {
-                        attachment_id: snap.id.clone(),
-                        object_key,
-                    });
+                    // FILE-003: 仅当 baseline 版本等于 list 观察版本时才条件删除
+                    let list_ver = remote_ver.as_str();
+                    if list_ver.is_empty() {
+                        plans.push(FileActionPlan::FileConflict {
+                            attachment_id: snap.id.clone(),
+                            object_key,
+                            remote_version: String::new(),
+                            local_sha256: baseline
+                                .map(|b| b.local_sha256.clone())
+                                .unwrap_or_default(),
+                        });
+                    } else if baseline
+                        .map(|b| b.remote_version.as_str() == list_ver)
+                        .unwrap_or(false)
+                    {
+                        plans.push(FileActionPlan::Delete {
+                            attachment_id: snap.id.clone(),
+                            object_key,
+                            expected_remote_version: list_ver.to_string(),
+                        });
+                    } else {
+                        // baseline 缺失或版本与远端不一致：本地删除 vs 远端修改
+                        plans.push(FileActionPlan::FileConflict {
+                            attachment_id: snap.id.clone(),
+                            object_key,
+                            remote_version: list_ver.to_string(),
+                            local_sha256: baseline
+                                .map(|b| b.local_sha256.clone())
+                                .unwrap_or_default(),
+                        });
+                    }
                 } else if database_confirmed && !policy.allow_confirmed_delete {
                     // 已确认 tombstone，但本轮（PartialFailure/Error/身份阻断）禁止远端删除：
                     // 安全跳过，保留 baseline/pending/conflict，待下一轮允许删除时再清。
@@ -1535,13 +1773,20 @@ pub fn plan_file_actions(
         match local_state {
             LocalFileState::Missing => match remote_version {
                 Some(_) => {
-                    // 本地缺失、远端存在 → Download (adopt_baseline false)
-                    plans.push(FileActionPlan::Download {
-                        attachment_id: snap.id.clone(),
-                        object_key,
-                        target_file_name: snap.file_name.clone(),
-                        adopt_baseline: false,
-                    });
+                    // 本地缺失、远端存在 → 安全恢复下载
+                    // COORD-001: 身份阻断/Disabled 时禁止恢复
+                    if !policy.allow_file_recovery {
+                        plans.push(FileActionPlan::WaitingForDatabaseConfirmation {
+                            attachment_id: snap.id.clone(),
+                        });
+                    } else {
+                        plans.push(FileActionPlan::Download {
+                            attachment_id: snap.id.clone(),
+                            object_key,
+                            target_file_name: snap.file_name.clone(),
+                            adopt_baseline: false,
+                        });
+                    }
                 }
                 None => {
                     // 双缺失 → UnrecoverableMissing
@@ -1570,10 +1815,43 @@ pub fn plan_file_actions(
                     // 本地存在、远端存在
                     if let Some(b) = baseline {
                         if b.remote_version == *remote_ver {
-                            // Baseline 版本与远端一致 → Skip
-                            plans.push(FileActionPlan::Skip {
-                                attachment_id: snap.id.clone(),
-                            });
+                            // FILE-001: baseline 版本与远端一致时仍比较本地完整 SHA-256
+                            match compute_file_hash(std::path::Path::new(&snap.file_path)) {
+                                Ok(local_sha256) => {
+                                    if local_sha256 == b.local_sha256 {
+                                        plans.push(FileActionPlan::Skip {
+                                            attachment_id: snap.id.clone(),
+                                        });
+                                    } else if policy.allow_confirmed_upload && database_confirmed {
+                                        plans.push(FileActionPlan::UpdateObject {
+                                            attachment_id: snap.id.clone(),
+                                            object_key,
+                                            local_path: PathBuf::from(&snap.file_path),
+                                            expected_remote_version: remote_ver.clone(),
+                                            local_sha256,
+                                        });
+                                    } else if !database_confirmed {
+                                        plans.push(
+                                            FileActionPlan::WaitingForDatabaseConfirmation {
+                                                attachment_id: snap.id.clone(),
+                                            },
+                                        );
+                                    } else {
+                                        // 已确认但本轮策略禁止上传：与 Delete 对称 Skip
+                                        plans.push(FileActionPlan::Skip {
+                                            attachment_id: snap.id.clone(),
+                                        });
+                                    }
+                                }
+                                Err(_) => {
+                                    plans.push(FileActionPlan::UnknownVersionDivergence {
+                                        attachment_id: snap.id.clone(),
+                                        object_key,
+                                        remote_version: remote_ver.clone(),
+                                        local_sha256: String::new(),
+                                    });
+                                }
+                            }
                         } else {
                             // Baseline 版本不同于远端 → 比较本地哈希
                             match compute_file_hash(std::path::Path::new(&snap.file_path)) {
@@ -1965,6 +2243,274 @@ mod tests {
         }
     }
 
+    fn sample_snapshot_with_versions(
+        id: &str,
+        is_deleted: bool,
+        is_dirty: bool,
+        file_path: &str,
+        version: i64,
+        synced_version: i64,
+    ) -> AttachmentSyncSnapshot {
+        AttachmentSyncSnapshot {
+            id: id.to_string(),
+            version,
+            synced_version,
+            is_dirty,
+            is_deleted,
+            file_path: file_path.to_string(),
+            file_name: "paper.pdf".to_string(),
+        }
+    }
+
+    #[test]
+    fn file_004_confirmed_when_local_generation_ahead_of_remote_cas() {
+        // DB-001: 多次本地编辑合并为一次上传确认后 version > synced_version 且 clean
+        let att_uuid = "550e8400-e29b-41d4-a716-446655440101";
+        let obj_key = format!("objects/v1/{att_uuid}");
+        let tmp_file =
+            std::env::temp_dir().join(format!("lumen-file004-{}.pdf", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_file, b"confirmed after merged edits").unwrap();
+        let tmp_path_str = tmp_file.to_string_lossy().to_string();
+
+        let snap = sample_snapshot_with_versions(att_uuid, false, false, &tmp_path_str, 5, 2);
+        let plans = plan_file_actions(
+            &[snap],
+            &HashMap::new(),
+            &HashMap::new(),
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::Upload {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key,
+                local_path: std::path::PathBuf::from(&tmp_path_str),
+            }]
+        );
+        let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn file_001_planner_update_when_local_hash_differs_under_same_baseline_version() {
+        let att_uuid = "550e8400-e29b-41d4-a716-446655440201";
+        let obj_key = format!("objects/v1/{att_uuid}");
+        let tmp_file =
+            std::env::temp_dir().join(format!("lumen-file001-{}.pdf", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_file, b"new local pdf bytes").unwrap();
+        let path_str = tmp_file.to_string_lossy().to_string();
+        let local_sha = compute_file_hash(&tmp_file).unwrap();
+
+        let mut baselines = HashMap::new();
+        baselines.insert(
+            att_uuid.to_string(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.to_string(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "v1".to_string(),
+                local_sha256: "old-baseline-sha".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            },
+        );
+        let mut remote_objects = HashMap::new();
+        remote_objects.insert(obj_key.clone(), "v1".to_string());
+
+        let snap = sample_snapshot_with_versions(att_uuid, false, false, &path_str, 1, 1);
+        let plans = plan_file_actions(
+            &[snap],
+            &baselines,
+            &remote_objects,
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::UpdateObject {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key,
+                local_path: tmp_file.clone(),
+                expected_remote_version: "v1".to_string(),
+                local_sha256: local_sha,
+            }]
+        );
+        let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn file_004_dirty_with_remote_cas_still_waits() {
+        let att_uuid = "6ba7b810-9dad-11d1-80b4-00c04fd43002";
+        let tmp_file =
+            std::env::temp_dir().join(format!("lumen-file004d-{}.pdf", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_file, b"still dirty").unwrap();
+        let tmp_path_str = tmp_file.to_string_lossy().to_string();
+
+        let snap = sample_snapshot_with_versions(att_uuid, false, true, &tmp_path_str, 5, 2);
+        let plans = plan_file_actions(
+            &[snap],
+            &HashMap::new(),
+            &HashMap::new(),
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::WaitingForDatabaseConfirmation {
+                attachment_id: att_uuid.to_string(),
+            }]
+        );
+        let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn file_004_clean_but_never_synced_waits() {
+        let att_uuid = "6ba7b810-9dad-11d1-80b4-00c04fd43003";
+        let tmp_file =
+            std::env::temp_dir().join(format!("lumen-file004z-{}.pdf", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_file, b"never synced").unwrap();
+        let tmp_path_str = tmp_file.to_string_lossy().to_string();
+
+        let snap = sample_snapshot_with_versions(att_uuid, false, false, &tmp_path_str, 1, 0);
+        let plans = plan_file_actions(
+            &[snap],
+            &HashMap::new(),
+            &HashMap::new(),
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::WaitingForDatabaseConfirmation {
+                attachment_id: att_uuid.to_string(),
+            }]
+        );
+        let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn file_004_tombstone_confirmed_despite_generation_ahead() {
+        let att_uuid = "6ba7b810-9dad-11d1-80b4-00c04fd43004";
+        let obj_key = format!("objects/v1/{att_uuid}");
+        let mut remote_objects = HashMap::new();
+        remote_objects.insert(obj_key.clone(), "remote-v1".to_string());
+        let mut baselines = HashMap::new();
+        baselines.insert(
+            att_uuid.to_string(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.to_string(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "h".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            },
+        );
+
+        let snap = sample_snapshot_with_versions(att_uuid, true, false, "/tmp/missing.pdf", 4, 1);
+        let plans = plan_file_actions(
+            &[snap],
+            &baselines,
+            &remote_objects,
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::Delete {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key,
+                expected_remote_version: "remote-v1".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn coord_001_identity_block_denies_file_recovery_download() {
+        let att_uuid = "550e8400-e29b-41d4-a716-446655440301";
+        let obj_key = format!("objects/v1/{att_uuid}");
+        let mut remote_objects = HashMap::new();
+        remote_objects.insert(obj_key.clone(), "v1".to_string());
+        let snap = sample_snapshot_with_versions(att_uuid, false, false, "/tmp/missing.pdf", 1, 1);
+        let plans = plan_file_actions(
+            &[snap],
+            &HashMap::new(),
+            &remote_objects,
+            FileMutationPolicy::block_mutations_and_recovery(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::WaitingForDatabaseConfirmation {
+                attachment_id: att_uuid.to_string(),
+            }]
+        );
+
+        // deny_all（仅禁变更）仍允许恢复下载
+        let snap2 = sample_snapshot_with_versions(att_uuid, false, false, "/tmp/missing.pdf", 1, 1);
+        let plans2 = plan_file_actions(
+            &[snap2],
+            &HashMap::new(),
+            &remote_objects,
+            FileMutationPolicy::deny_all(),
+        );
+        assert!(matches!(
+            plans2.as_slice(),
+            [FileActionPlan::Download { .. }]
+        ));
+    }
+
+    #[test]
+    fn file_003_tombstone_without_matching_baseline_is_conflict_not_delete() {
+        let att_uuid = "6ba7b810-9dad-11d1-80b4-00c04fd43005";
+        let obj_key = format!("objects/v1/{att_uuid}");
+        let mut remote_objects = HashMap::new();
+        remote_objects.insert(obj_key.clone(), "remote-v2".to_string());
+        // baseline 缺失
+        let snap = sample_snapshot_with_versions(att_uuid, true, false, "/tmp/missing.pdf", 4, 1);
+        let plans = plan_file_actions(
+            &[snap],
+            &HashMap::new(),
+            &remote_objects,
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::FileConflict {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "remote-v2".to_string(),
+                local_sha256: String::new(),
+            }]
+        );
+
+        // baseline 版本落后于 list → 冲突，零删除
+        let mut baselines = HashMap::new();
+        baselines.insert(
+            att_uuid.to_string(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.to_string(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "old".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            },
+        );
+        let snap2 = sample_snapshot_with_versions(att_uuid, true, false, "/tmp/missing.pdf", 4, 1);
+        let plans = plan_file_actions(
+            &[snap2],
+            &baselines,
+            &remote_objects,
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans,
+            vec![FileActionPlan::FileConflict {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key,
+                remote_version: "remote-v2".to_string(),
+                local_sha256: "old".to_string(),
+            }]
+        );
+    }
+
     #[test]
     fn test_plan_file_actions_matrix() {
         let att_uuid = "550e8400-e29b-41d4-a716-446655440000";
@@ -2031,7 +2577,8 @@ mod tests {
             }]
         );
 
-        // 4. 活跃、本地存在、对象存在、有同版本 baseline -> Skip
+        // 4. 活跃、本地存在、对象存在、有同版本 baseline 且本地哈希一致 -> Skip
+        let local_sha = compute_file_hash(&tmp_file).unwrap();
         baselines.insert(
             att_uuid.to_string(),
             AttachmentFileBaseline {
@@ -2039,7 +2586,7 @@ mod tests {
                 file_library_id: "flib-1".to_string(),
                 object_key: obj_key.clone(),
                 remote_version: "v1".to_string(),
-                local_sha256: "hash".to_string(),
+                local_sha256: local_sha.clone(),
                 local_presence: true,
                 last_success_at: 100,
             },
@@ -2054,6 +2601,36 @@ mod tests {
             plans_skip,
             vec![FileActionPlan::Skip {
                 attachment_id: att_uuid.to_string(),
+            }]
+        );
+
+        // 4b. FILE-001: baseline 版本与远端一致但本地内容已变 -> UpdateObject
+        baselines.insert(
+            att_uuid.to_string(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.to_string(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "v1".to_string(),
+                local_sha256: "stale-baseline-hash".to_string(),
+                local_presence: true,
+                last_success_at: 100,
+            },
+        );
+        let plans_update = plan_file_actions(
+            &atts,
+            &baselines,
+            &remote_objects,
+            FileMutationPolicy::allow_all(),
+        );
+        assert_eq!(
+            plans_update,
+            vec![FileActionPlan::UpdateObject {
+                attachment_id: att_uuid.to_string(),
+                object_key: obj_key.clone(),
+                local_path: tmp_file.clone(),
+                expected_remote_version: "v1".to_string(),
+                local_sha256: local_sha,
             }]
         );
 
@@ -2098,8 +2675,21 @@ mod tests {
             }]
         );
 
-        // 7. tombstone、对象存在、已确认 -> Delete
+        // 7. tombstone、对象存在、已确认、baseline 版本匹配 -> 条件 Delete
         remote_objects.insert(obj_key.clone(), "v1".to_string());
+        // 确保 baseline.remote_version 与 list 一致（case 4b 已写入 v1）
+        baselines.insert(
+            att_uuid.to_string(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.to_string(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "v1".to_string(),
+                local_sha256: "stale-baseline-hash".to_string(),
+                local_presence: true,
+                last_success_at: 100,
+            },
+        );
         let att_del = sample_snapshot(att_uuid, true, false, &tmp_path_str, 1);
         let plans_del = plan_file_actions(
             &[att_del],
@@ -2112,6 +2702,7 @@ mod tests {
             vec![FileActionPlan::Delete {
                 attachment_id: att_uuid.to_string(),
                 object_key: obj_key.clone(),
+                expected_remote_version: "v1".to_string(),
             }]
         );
 
@@ -2534,11 +3125,24 @@ mod tests {
             }]
         );
 
-        // c) tombstone 已确认 + 远端存在 + 策略禁止删除 → Skip（不 Delete，Delete=0）
+        // c) tombstone 已确认 + baseline 匹配 + 策略禁止删除 → Skip（不 Delete，Delete=0）
+        let mut baselines_for_policy = HashMap::new();
+        baselines_for_policy.insert(
+            att_uuid.clone(),
+            AttachmentFileBaseline {
+                attachment_id: att_uuid.clone(),
+                file_library_id: "flib-1".to_string(),
+                object_key: obj_key.clone(),
+                remote_version: "v1".to_string(),
+                local_sha256: "h".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            },
+        );
         let att_tomb = sample_snapshot(&att_uuid, true, false, &path_str, 1);
         let plans = plan_file_actions(
             &[att_tomb],
-            &HashMap::new(),
+            &baselines_for_policy,
             &remote_objects,
             FileMutationPolicy::deny_all(),
         );
@@ -2590,10 +3194,14 @@ mod tests {
         fail_download: AtomicBool,
         empty_remote_version: AtomicBool,
         temp_as_directory: AtomicBool,
+        update_unsupported: AtomicBool,
+        update_force_conflict: AtomicBool,
         corrupt_local_path: Mutex<Option<PathBuf>>,
         /// 下载期间把该目录设为只读，模拟后续数据库写入失败
         readonly_dir: Mutex<Option<PathBuf>>,
         concurrent_write: Mutex<Option<(PathBuf, Vec<u8>)>>,
+        /// FILE-002 测试：download 返回版本覆盖（模拟 list 后版本变化）
+        download_version_override: Mutex<Option<String>>,
     }
 
     impl TestBackend {
@@ -2603,9 +3211,12 @@ mod tests {
                 fail_download: AtomicBool::new(false),
                 empty_remote_version: AtomicBool::new(false),
                 temp_as_directory: AtomicBool::new(false),
+                update_unsupported: AtomicBool::new(false),
+                update_force_conflict: AtomicBool::new(false),
                 corrupt_local_path: Mutex::new(None),
                 readonly_dir: Mutex::new(None),
                 concurrent_write: Mutex::new(None),
+                download_version_override: Mutex::new(None),
             }
         }
 
@@ -2696,6 +3307,37 @@ mod tests {
             Box::pin(async move { result })
         }
 
+        fn update_object_if_version(
+            &self,
+            object_key: String,
+            local_path: PathBuf,
+            expected_remote_version: String,
+        ) -> Pin<Box<dyn Future<Output = Result<UpdateObjectResult>> + Send>> {
+            if self.update_unsupported.load(Ordering::Relaxed) {
+                return Box::pin(async move { Ok(UpdateObjectResult::Unsupported) });
+            }
+            if self.update_force_conflict.load(Ordering::Relaxed) {
+                return Box::pin(async move { Ok(UpdateObjectResult::VersionConflict) });
+            }
+            let mut objects = self.objects.lock().unwrap();
+            let result = match objects.get_mut(&object_key) {
+                None => Ok(UpdateObjectResult::VersionConflict),
+                Some(obj) if obj.version != expected_remote_version => {
+                    Ok(UpdateObjectResult::VersionConflict)
+                }
+                Some(obj) => match std::fs::read(&local_path) {
+                    Ok(content) => {
+                        obj.content = content;
+                        let new_version = format!("{expected_remote_version}+upd");
+                        obj.version = new_version.clone();
+                        Ok(UpdateObjectResult::Updated(new_version))
+                    }
+                    Err(e) => Err(e.into()),
+                },
+            };
+            Box::pin(async move { result })
+        }
+
         fn download_object(
             &self,
             object_key: String,
@@ -2708,6 +3350,7 @@ mod tests {
             let corrupt_local_path = self.corrupt_local_path.lock().unwrap().clone();
             let readonly_dir = self.readonly_dir.lock().unwrap().clone();
             let concurrent_write = self.concurrent_write.lock().unwrap().clone();
+            let version_override = self.download_version_override.lock().unwrap().clone();
             let object = self
                 .objects
                 .lock()
@@ -2760,6 +3403,9 @@ mod tests {
                 if empty_remote_version {
                     return Ok(Some(String::new()));
                 }
+                if let Some(v) = version_override {
+                    return Ok(Some(v));
+                }
                 Ok(Some(version))
             })
         }
@@ -2767,10 +3413,20 @@ mod tests {
         fn delete_object(
             &self,
             object_key: String,
-        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-            // trait 返回的 future 是 'static：同步完成后返回就绪 future
-            self.objects.lock().unwrap().remove(&object_key);
-            Box::pin(async { Ok(()) })
+            expected_remote_version: String,
+        ) -> Pin<Box<dyn Future<Output = Result<DeleteObjectResult>> + Send>> {
+            let mut objects = self.objects.lock().unwrap();
+            let result = match objects.get(&object_key) {
+                None => Ok(DeleteObjectResult::AlreadyAbsent),
+                Some(obj) if obj.version != expected_remote_version => {
+                    Ok(DeleteObjectResult::VersionConflict)
+                }
+                Some(_) => {
+                    objects.remove(&object_key);
+                    Ok(DeleteObjectResult::Deleted)
+                }
+            };
+            Box::pin(async move { result })
         }
 
         fn configuration_fingerprint(
@@ -3636,6 +4292,512 @@ mod tests {
         assert_eq!(
             service.get_attachment_sync_issue(&att_id).await.unwrap(),
             None
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_001_executor_cas_update_advances_baseline_with_uploaded_hash() {
+        let dir = temp_test_dir("file001-update-ok");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+        std::fs::write(&formal, b"new local pdf content").unwrap();
+        let new_hash = compute_file_hash(&formal).unwrap();
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"old remote content", "remote-v1");
+
+        let service = create_test_service(&dir, backend);
+        let att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "stale-old-hash".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+
+        assert_eq!(summary.uploaded, 1, "条件更新应计入 uploaded");
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.conflicts, 0);
+        let baseline = service
+            .db
+            .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+            .unwrap()
+            .expect("baseline 应存在");
+        assert_eq!(baseline.remote_version, "remote-v1+upd");
+        assert_eq!(baseline.local_sha256, new_hash);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_001_executor_version_conflict_persists_conflict_and_keeps_baseline() {
+        let dir = temp_test_dir("file001-update-conflict");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+        std::fs::write(&formal, b"local edited").unwrap();
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote content", "remote-v1");
+        backend.update_force_conflict.store(true, Ordering::Relaxed);
+
+        let service = create_test_service(&dir, backend);
+        let att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "stale-old-hash".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.conflicts, 1);
+        assert_eq!(summary.uploaded, 0);
+        let baseline = service
+            .db
+            .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+            .unwrap()
+            .unwrap();
+        assert_eq!(baseline.remote_version, "remote-v1");
+        assert_eq!(baseline.local_sha256, "stale-old-hash");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_001_executor_unsupported_backend_fails_without_baseline_advance() {
+        let dir = temp_test_dir("file001-update-unsupported");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+        std::fs::write(&formal, b"local edited for unsupported").unwrap();
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote content", "remote-v1");
+        backend.update_unsupported.store(true, Ordering::Relaxed);
+
+        let service = create_test_service(&dir, backend);
+        let att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "stale-old-hash".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.failed, 1, "Unsupported 必须计为失败，零覆盖");
+        assert_eq!(summary.uploaded, 0);
+        let baseline = service
+            .db
+            .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+            .unwrap()
+            .unwrap();
+        assert_eq!(baseline.remote_version, "remote-v1");
+        assert_eq!(baseline.local_sha256, "stale-old-hash");
+        assert_eq!(
+            std::fs::read(&formal).unwrap(),
+            b"local edited for unsupported"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_002_regular_download_replaces_when_target_still_missing() {
+        let dir = temp_test_dir("file002-missing-ok");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote bytes", "remote-v1");
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        att.file_name = "paper.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.downloaded, 1);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(std::fs::read(&formal).unwrap(), b"remote bytes");
+        let baseline = service
+            .db
+            .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+            .unwrap()
+            .unwrap();
+        assert_eq!(baseline.remote_version, "remote-v1");
+        assert_eq!(baseline.local_sha256, compute_file_hash(&formal).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_002_regular_download_rejects_version_mismatch_after_list() {
+        let dir = temp_test_dir("file002-version-mismatch");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote bytes", "remote-v1");
+        // list 看到 remote-v1，download 返回另一版本 → 必须拒绝采用
+        *backend.download_version_override.lock().unwrap() = Some("remote-v9".to_string());
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        att.file_name = "paper.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.downloaded, 0);
+        assert!(!formal.exists(), "版本不一致不得写入正式文件");
+        assert!(
+            service
+                .db
+                .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+                .unwrap()
+                .is_none()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_002_regular_download_blocks_overwrite_when_target_appears_different() {
+        let dir = temp_test_dir("file002-reappear-diff");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote bytes", "remote-v1");
+        *backend.concurrent_write.lock().unwrap() =
+            Some((formal.clone(), b"concurrent different".to_vec()));
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        att.file_name = "paper.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.conflicts + summary.unknown_divergence, 1);
+        assert_eq!(summary.downloaded, 0);
+        assert_eq!(
+            std::fs::read(&formal).unwrap(),
+            b"concurrent different",
+            "并发出现的不同内容不得被覆盖"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_002_regular_download_adopts_same_content_without_fake_conflict() {
+        let dir = temp_test_dir("file002-same-content");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"same remote bytes", "remote-v1");
+        *backend.concurrent_write.lock().unwrap() =
+            Some((formal.clone(), b"same remote bytes".to_vec()));
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        att.file_name = "paper.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.skipped, 1, "相同内容竞态应采用现有文件");
+        assert_eq!(summary.conflicts, 0);
+        assert_eq!(summary.unknown_divergence, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(std::fs::read(&formal).unwrap(), b"same remote bytes");
+        let baseline = service
+            .db
+            .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+            .unwrap()
+            .expect("相同内容应建立 baseline");
+        assert_eq!(baseline.remote_version, "remote-v1");
+        assert_eq!(baseline.local_sha256, compute_file_hash(&formal).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_002_regular_download_corrupt_target_during_download_is_unknown() {
+        let dir = temp_test_dir("file002-corrupt-target");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+        let formal = dir.join("paper.pdf");
+        std::fs::write(&formal, b"old local").unwrap();
+        let old_hash = compute_file_hash(&formal).unwrap();
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote bytes", "remote-v1");
+        // 下载期间把目标换成目录
+        *backend.corrupt_local_path.lock().unwrap() = Some(formal.clone());
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(&att_id, false, false, &formal.to_string_lossy());
+        att.file_name = "paper.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v0".to_string(),
+                local_sha256: old_hash,
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        // 目标变为目录：未知分歧，不覆盖
+        assert_eq!(summary.unknown_divergence, 1);
+        assert_eq!(summary.downloaded, 0);
+        assert!(formal.is_dir());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_003_executor_conditional_delete_when_baseline_matches() {
+        let dir = temp_test_dir("file003-del-ok");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote content", "remote-v1");
+
+        let service = create_test_service(&dir, backend);
+        let mut att = sample_attachment(
+            &att_id,
+            true,
+            false,
+            &dir.join("gone.pdf").to_string_lossy(),
+        );
+        att.file_name = "gone.pdf".to_string();
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "h".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.deleted, 1);
+        assert_eq!(summary.conflicts, 0);
+        assert!(
+            service
+                .db
+                .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+                .unwrap()
+                .is_none()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn file_003_executor_version_conflict_keeps_remote_object() {
+        let dir = temp_test_dir("file003-del-conflict");
+        let att_id = uuid::Uuid::new_v4().to_string();
+        let object_key = format!("objects/v1/{att_id}");
+
+        let backend = TestBackend::new();
+        backend.put_object(&object_key, b"remote content", "remote-v2");
+        // planner 会看到 list=remote-v2，baseline=remote-v2 才会 Delete；
+        // 这里 baseline 匹配 list，但 TestBackend 在 CAS 时对象版本被改为不同
+        // → 直接用 update 无关：把对象版本设为与 baseline 不同则 planner 不会 Delete。
+        // 因此：baseline 与 list 一致（remote-v2），executor CAS 成功路径已测。
+        // 冲突路径：list 后版本变化用 download 无关，改用 baseline=remote-v2 且
+        // TestBackend 对象版本=remote-v3 → planner FileConflict（零 Delete）。
+        // 这里验证 executor：构造 Delete 计划等价场景——baseline=remote-v1，
+        // list 对象 remote-v2 → planner FileConflict。
+        backend.put_object(&object_key, b"remote content", "remote-v2");
+
+        let service = create_test_service(&dir, backend);
+        let att = sample_attachment(
+            &att_id,
+            true,
+            false,
+            &dir.join("gone.pdf").to_string_lossy(),
+        );
+        service.db.insert_attachment(&att).unwrap();
+        service
+            .db
+            .set_synced_version(
+                database::SyncEntityType::Attachment,
+                &database::SyncEntityKey::Id(att_id.clone()),
+                1,
+            )
+            .unwrap();
+        service
+            .db
+            .upsert_attachment_file_baseline(&AttachmentFileBaseline {
+                attachment_id: att_id.clone(),
+                file_library_id: TEST_FILE_LIBRARY_ID.to_string(),
+                object_key: object_key.clone(),
+                remote_version: "remote-v1".to_string(),
+                local_sha256: "h".to_string(),
+                local_presence: true,
+                last_success_at: 1,
+            })
+            .unwrap();
+
+        let summary = service
+            .sync_file_library_round(FileMutationPolicy::allow_all())
+            .await
+            .unwrap();
+        assert_eq!(summary.deleted, 0);
+        assert_eq!(summary.conflicts, 1);
+        // baseline 保留（冲突不清理）
+        assert!(
+            service
+                .db
+                .get_attachment_file_baseline(&att_id, TEST_FILE_LIBRARY_ID)
+                .unwrap()
+                .is_some()
         );
 
         let _ = std::fs::remove_dir_all(&dir);

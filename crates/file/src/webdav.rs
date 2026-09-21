@@ -466,6 +466,97 @@ impl AttachmentBackend for WebDavBackend {
         })
     }
 
+    fn update_object_if_version(
+        &self,
+        object_key: String,
+        local_path: PathBuf,
+        expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::UpdateObjectResult>> + Send>> {
+        let (enabled, endpoint, username, password) = {
+            let c = self.config.read().unwrap();
+            (
+                c.enabled,
+                c.endpoint.clone(),
+                c.username.clone(),
+                c.password.clone(),
+            )
+        };
+        let client = self.client.clone();
+        let remote_path = self.get_effective_remote_path();
+
+        Box::pin(async move {
+            if !enabled || endpoint.is_empty() {
+                return Err(anyhow!("WebDAV 未启用或配置为空"));
+            }
+            if expected_remote_version.is_empty() {
+                return Ok(crate::backend::UpdateObjectResult::Unsupported);
+            }
+
+            let leaf = crate::backend::validate_canonical_object_key(&object_key)?;
+            let target_url = format!(
+                "{}/{}/objects/v1/{}",
+                endpoint.trim_end_matches('/'),
+                remote_path.trim_start_matches('/').trim_end_matches('/'),
+                leaf
+            );
+
+            let file = tokio::fs::File::open(&local_path)
+                .await
+                .map_err(|e| anyhow!("打开本地待更新文件 '{}' 失败: {e}", local_path.display()))?;
+            let file_size = file
+                .metadata()
+                .await
+                .map_err(|e| anyhow!("读取待更新文件元数据失败: {e}"))?
+                .len();
+            let stream = ReaderStream::new(file);
+            let body = reqwest::Body::wrap_stream(stream);
+
+            // FILE-001: CAS 更新 — If-Match 当前远端版本，绝不无条件覆盖
+            let resp = client
+                .request(Method::PUT, &target_url)
+                .basic_auth(&username, Some(&password))
+                .header("If-Match", expected_remote_version.clone())
+                .header("Content-Length", file_size)
+                .body(body)
+                .send()
+                .await
+                .map_err(|e| anyhow!("WebDAV 条件更新对象请求失败: {e}"))?;
+
+            let status = resp.status().as_u16();
+            if status == 412 {
+                return Ok(crate::backend::UpdateObjectResult::VersionConflict);
+            }
+            if status == 404 {
+                // 对象在预期版本上已消失：视作版本冲突，不得静默创建
+                return Ok(crate::backend::UpdateObjectResult::VersionConflict);
+            }
+            if !resp.status().is_success() {
+                return Err(anyhow!("WebDAV 条件更新对象失败，状态码: {status}"));
+            }
+
+            let raw_etag = resp.headers().get("ETag").and_then(|h| h.to_str().ok());
+            let remote_version = match normalize_required_etag(raw_etag) {
+                Some(v) => v,
+                None => {
+                    let head_resp = client
+                        .head(&target_url)
+                        .basic_auth(&username, Some(&password))
+                        .send()
+                        .await
+                        .map_err(|e| anyhow!("WebDAV 更新后 HEAD 补查 ETag 失败: {e}"))?;
+                    let head_etag = head_resp
+                        .headers()
+                        .get("ETag")
+                        .and_then(|h| h.to_str().ok());
+                    normalize_required_etag(head_etag)
+                        .ok_or_else(|| anyhow!("WebDAV 条件更新后未获取到有效 ETag"))?
+                }
+            };
+
+            Ok(crate::backend::UpdateObjectResult::Updated(remote_version))
+        })
+    }
+
     fn download_object(
         &self,
         object_key: String,
@@ -566,7 +657,8 @@ impl AttachmentBackend for WebDavBackend {
     fn delete_object(
         &self,
         object_key: String,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::DeleteObjectResult>> + Send>> {
         let (enabled, endpoint, username, password) = {
             let c = self.config.read().unwrap();
             (
@@ -583,6 +675,9 @@ impl AttachmentBackend for WebDavBackend {
             if !enabled || endpoint.is_empty() {
                 return Err(anyhow!("WebDAV 未启用或配置为空"));
             }
+            if expected_remote_version.is_empty() {
+                return Ok(crate::backend::DeleteObjectResult::Unsupported);
+            }
 
             let leaf = crate::backend::validate_canonical_object_key(&object_key)?;
             let target_url = format!(
@@ -592,19 +687,26 @@ impl AttachmentBackend for WebDavBackend {
                 leaf
             );
 
+            // FILE-003: If-Match 条件删除，防止删掉其他设备写入的新版本
             let resp = client
                 .request(Method::DELETE, &target_url)
                 .basic_auth(&username, Some(&password))
+                .header("If-Match", expected_remote_version)
                 .send()
                 .await
                 .map_err(|e| anyhow!("WebDAV 删除对象请求失败: {e}"))?;
 
             let status = resp.status().as_u16();
-            if status == 404 || resp.status().is_success() {
-                Ok(())
-            } else {
-                Err(anyhow!("WebDAV 删除对象失败，状态码: {status}"))
+            if status == 412 {
+                return Ok(crate::backend::DeleteObjectResult::VersionConflict);
             }
+            if status == 404 {
+                return Ok(crate::backend::DeleteObjectResult::AlreadyAbsent);
+            }
+            if resp.status().is_success() {
+                return Ok(crate::backend::DeleteObjectResult::Deleted);
+            }
+            Err(anyhow!("WebDAV 删除对象失败，状态码: {status}"))
         })
     }
 
@@ -797,6 +899,14 @@ pub(crate) async fn create_or_verify_collection(
 
 const IDENTITY_FILE_NAME: &str = ".lumen-file-library-v1.json";
 
+/// BACKEND-001: propstat 状态是否为 2xx（仅成功属性可采信）
+fn propstat_status_is_success(status: &str) -> bool {
+    status
+        .split_whitespace()
+        .filter_map(|tok| tok.parse::<u16>().ok())
+        .any(|code| (200..300).contains(&code))
+}
+
 /// WebDAV 子项条目
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WebDavItem {
@@ -900,6 +1010,14 @@ pub(crate) fn parse_webdav_propfind_items(
     let mut current_href_count = 0usize;
     let mut in_href = false;
     let mut in_etag = false;
+    // BACKEND-001: 与 Depth:0 一致 — collection 仅认 resourcetype 内；
+    // getetag/仅在 propstat 状态为 2xx 时提交到当前 response
+    let mut in_propstat = false;
+    let mut in_resourcetype = false;
+    let mut in_status = false;
+    let mut status_buf = String::new();
+    let mut propstat_etag = String::new();
+    let mut propstat_collection = false;
 
     loop {
         match reader.read_event() {
@@ -911,25 +1029,52 @@ pub(crate) fn parse_webdav_propfind_items(
                         return Err(anyhow!("WebDAV 响应条目包含多个 href"));
                     }
                 }
+                "propstat" => {
+                    in_propstat = true;
+                    propstat_etag.clear();
+                    propstat_collection = false;
+                    status_buf.clear();
+                }
+                "status" => in_status = true,
+                "resourcetype" => in_resourcetype = true,
                 "getetag" => in_etag = true,
-                "collection" => current_is_collection = true,
+                "collection" if in_resourcetype => propstat_collection = true,
                 _ => {}
             },
             Ok(Event::Empty(ref e)) => {
-                if e.local_name().as_ref() == "collection" {
-                    current_is_collection = true;
+                if e.local_name().as_ref() == "collection" && in_resourcetype {
+                    propstat_collection = true;
                 }
             }
             Ok(Event::Text(ref e)) => {
                 if in_href {
                     current_href = e.as_ref().to_string();
                 } else if in_etag {
-                    current_etag = e.as_ref().to_string();
+                    propstat_etag = e.as_ref().to_string();
+                } else if in_status {
+                    status_buf.push_str(e.as_ref());
                 }
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
                 "href" => in_href = false,
                 "getetag" => in_etag = false,
+                "resourcetype" => in_resourcetype = false,
+                "status" => in_status = false,
+                "propstat" => {
+                    // 仅成功 propstat 的属性生效
+                    if in_propstat && propstat_status_is_success(&status_buf) {
+                        if !propstat_etag.is_empty() {
+                            current_etag = std::mem::take(&mut propstat_etag);
+                        }
+                        if propstat_collection {
+                            current_is_collection = true;
+                        }
+                    }
+                    in_propstat = false;
+                    propstat_etag.clear();
+                    propstat_collection = false;
+                    status_buf.clear();
+                }
                 "response" => {
                     if current_href_count != 1 || current_href.is_empty() {
                         return Err(anyhow!("WebDAV 响应条目必须有且仅有一个 href"));
@@ -1107,6 +1252,56 @@ mod tests {
             "objects/v1/6ba7b810-9dad-11d1-80b4-00c04fd430c8"
         );
         assert_eq!(entries[1].remote_version, "etag-2");
+    }
+
+    #[test]
+    fn backend_001_depth1_ignores_collection_outside_resourcetype_and_failed_propstat() {
+        // collection 标签不在 resourcetype 内 → 不得视为目录
+        let xml_loose = r#"<?xml version="1.0" encoding="utf-8" ?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/Lumen/objects</d:href>
+    <d:propstat>
+      <d:prop><d:collection/><d:getetag>"bad"</d:getetag></d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>"#;
+        let items = parse_webdav_propfind_items(xml_loose, "/Lumen").unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(
+            !items[0].is_collection,
+            "collection 必须位于 resourcetype 内"
+        );
+
+        // propstat 404 的 etag 不得采信
+        let xml_fail = r#"<?xml version="1.0" encoding="utf-8" ?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/Lumen/objects/v1/550e8400-e29b-41d4-a716-446655440000</d:href>
+    <d:propstat>
+      <d:prop><d:getetag>"fail-etag"</d:getetag><d:resourcetype/></d:prop>
+      <d:status>HTTP/1.1 404 Not Found</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>"#;
+        let items = parse_webdav_propfind_items(xml_fail, "/Lumen/objects/v1").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].etag, None, "失败 propstat 的 etag 不得采用");
+
+        // 合法 resourcetype.collection + 200 → 目录
+        let xml_ok = r#"<?xml version="1.0" encoding="utf-8" ?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/Lumen/objects</d:href>
+    <d:propstat>
+      <d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>"#;
+        let items = parse_webdav_propfind_items(xml_ok, "/Lumen").unwrap();
+        assert!(items[0].is_collection);
     }
 
     #[test]

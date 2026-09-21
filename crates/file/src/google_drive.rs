@@ -439,6 +439,16 @@ impl AttachmentBackend for GoogleDriveBackend {
         })
     }
 
+    fn update_object_if_version(
+        &self,
+        _object_key: String,
+        _local_path: PathBuf,
+        _expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::UpdateObjectResult>> + Send>> {
+        // FILE-001: Drive 无安全条件更新（无 If-Match 等效）；禁止先查后写。
+        Box::pin(async move { Ok(crate::backend::UpdateObjectResult::Unsupported) })
+    }
+
     fn download_object(
         &self,
         object_key: String,
@@ -540,64 +550,11 @@ impl AttachmentBackend for GoogleDriveBackend {
 
     fn delete_object(
         &self,
-        object_key: String,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        let client = self.client.clone();
-        let state = {
-            let s = self.state.read().unwrap();
-            OAuthState {
-                client_id: s.client_id.clone(),
-                client_secret: s.client_secret.clone(),
-                refresh_token: s.refresh_token.clone(),
-                access_token: s.access_token.clone(),
-                token_expires_at: s.token_expires_at,
-            }
-        };
-
-        Box::pin(async move {
-            let leaf = crate::backend::validate_canonical_object_key(&object_key)?;
-            let backend = GoogleDriveBackend {
-                client,
-                state: RwLock::new(state),
-            };
-
-            let token = backend.ensure_token().await?;
-
-            let root_id = match backend.find_root_folder_id_readonly(&token).await? {
-                Some(id) => id,
-                None => return Ok(()),
-            };
-
-            let objects_id = match backend
-                .find_subfolder_id_readonly(&token, &root_id, DRIVE_OBJECTS_DIR_NAME)
-                .await?
-            {
-                Some(id) => id,
-                None => return Ok(()),
-            };
-
-            let files = backend
-                .find_files_in_folder_by_name(&token, &objects_id, &leaf)
-                .await?;
-
-            for f in files {
-                let url = format!("{DRIVE_API_BASE}/{}", f.id);
-                let resp = backend
-                    .client
-                    .delete(&url)
-                    .bearer_auth(&token)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow!("Google Drive 删除请求失败: {e}"))?;
-
-                let status = resp.status().as_u16();
-                if status != 404 && !resp.status().is_success() {
-                    return Err(anyhow!("Google Drive 删除失败，状态码: {status}"));
-                }
-            }
-
-            Ok(())
-        })
+        _object_key: String,
+        _expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::DeleteObjectResult>> + Send>> {
+        // FILE-003: Drive 无 If-Match 等效条件删除；禁止先查后写。
+        Box::pin(async move { Ok(crate::backend::DeleteObjectResult::Unsupported) })
     }
 }
 

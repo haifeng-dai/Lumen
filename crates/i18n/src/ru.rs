@@ -222,6 +222,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "Синхронизировать вложения",
         I18nKey::FileSyncLastRun => "Последняя синхронизация файлов",
         I18nKey::FileSyncSummaryUnavailable => "Сводка синхронизации файлов недоступна",
+        I18nKey::FileSyncNeedsAttention => {
+            "Синхронизация файлов требует внимания: конфликты, расхождения или невосстановимые объекты"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "Синхронизация файлов ожидает: подтверждение БД или загрузка по требованию не завершены"
+        }
         I18nKey::SyncSkippedBusy => "Синхронизация уже выполняется, этот запрос не запущен",
         I18nKey::SyncUploaded => "Отправлено",
         I18nKey::SyncDownloaded => "Загружено",
@@ -239,6 +245,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "Идентификатор библиотеки не совпадает",
         I18nKey::DatabaseSyncConflict => "Конфликты синхронизации базы данных",
         I18nKey::DatabaseSyncPartialFailure => "Частичная ошибка синхронизации",
+        I18nKey::DatabaseSyncPendingCount => "Новые ожидающие изменения",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "Новые локальные изменения во время синхронизации ожидают отправки"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "Версии удалённых данных ниже локальной базовой линии синхронизации (возможен откат сервера); локальные данные не перезаписаны — проверьте резервную копию сервера"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "Регрессии версий",
         I18nKey::DatabaseSyncError => "Ошибка синхронизации базы данных",
         I18nKey::DatabaseSyncUploaded => "Загружено",
         I18nKey::DatabaseSyncDownloaded => "Скачано",
@@ -422,6 +436,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Очистить удалённые данные",
         I18nKey::PurgeDeletedData => "Полностью очистить удалённые данные (локально и удалённо)",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "Безопасная очистка удалённых данных сейчас не поддерживается: отсутствуют протоколы водяного знака устройства и срока хранения; продолжение сломает инкрементальную синхронизацию офлайн-устройств"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "Инициализация удалённого хранилища файлов",

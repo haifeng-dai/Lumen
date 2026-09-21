@@ -122,6 +122,11 @@ impl super::PdfReaderView {
     }
 
     pub fn reload_notes(&mut self, cx: &mut Context<Self>) {
+        // 编辑文献笔记时不要从 DB 重载，避免冲掉 temp 笔记
+        if self.editing_note_index.is_some() {
+            cx.notify();
+            return;
+        }
         if let Some(delegate) = &self.delegate {
             let lit_id = self
                 .document_id
@@ -139,6 +144,15 @@ impl super::PdfReaderView {
                     .cloned()
             {
                 merged_notes.push(gen_note);
+            }
+            if let Some(temp) = self
+                .notes_cache
+                .iter()
+                .find(|n| n.id == "temp_new_note")
+                .cloned()
+                && !merged_notes.iter().any(|n| n.id == "temp_new_note")
+            {
+                merged_notes.push(temp);
             }
             self.notes_cache = merged_notes;
         }

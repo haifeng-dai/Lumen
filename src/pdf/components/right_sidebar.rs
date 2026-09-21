@@ -8,7 +8,7 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::{ActiveTheme, Icon, Selectable, h_flex, label::Label, v_flex};
 use i18n::I18nKey;
-use log::debug;
+use log::{debug, error};
 
 impl PdfReaderView {
     pub(crate) fn render_right_sidebar(
@@ -475,8 +475,9 @@ impl PdfReaderView {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
 
-        // 首次渲染时加载笔记
+        // 首次渲染时加载笔记（编辑中不要从 DB 重载，避免冲掉 temp 笔记）
         if self.notes_cache.is_empty()
+            && self.editing_note_index.is_none()
             && let Some(delegate) = &self.delegate
         {
             let lit_id = self
@@ -496,9 +497,15 @@ impl PdfReaderView {
         }
 
         if let Some(index) = self.editing_note_index {
+            let Some(note) = self.notes_cache.get(index).cloned() else {
+                self.editing_note_index = None;
+                self.edit_note_title = None;
+                self.edit_note_content = None;
+                cx.notify();
+                return v_flex().size_full().into_any_element();
+            };
             // 确保输入框状态在新建/编辑时都被正确初始化
             if self.edit_note_title.is_none() || self.edit_note_content.is_none() {
-                let note = &self.notes_cache[index];
                 let title = note.title.clone();
                 let content = note.content.clone();
 
@@ -520,7 +527,6 @@ impl PdfReaderView {
                 self.edit_note_content = Some(entity2);
             }
 
-            let note = &self.notes_cache[index];
             let note_id = note.id.clone();
 
             return v_flex()
@@ -580,8 +586,11 @@ impl PdfReaderView {
 
                                         let mut final_note_id = note_id.clone();
                                         let is_temp = note_id == "temp_new_note";
+                                        let Some(delegate) = this.delegate.clone() else {
+                                            return;
+                                        };
 
-                                        if is_temp && let Some(delegate) = &this.delegate {
+                                        if is_temp {
                                             let lit_id = this
                                                 .document_id
                                                 .split("::")
@@ -591,20 +600,30 @@ impl PdfReaderView {
                                             let default_title = new_title
                                                 .clone()
                                                 .unwrap_or_else(|| "未命名笔记".to_string());
-                                            if let Some(real_id) =
-                                                delegate.create_note(&lit_id, &default_title)
-                                            {
-                                                final_note_id = real_id;
+                                            match delegate.create_note(&lit_id, &default_title) {
+                                                Some(real_id) => final_note_id = real_id,
+                                                None => {
+                                                    error!(
+                                                        "笔记保存失败: create_note 返回 None (lit_id={lit_id})"
+                                                    );
+                                                    // 保持编辑态，避免静默丢失
+                                                    return;
+                                                }
                                             }
                                         }
 
-                                        if let Some(delegate) = &this.delegate {
-                                            delegate.update_note(
-                                                &final_note_id,
-                                                new_title.as_deref(),
-                                                new_content.as_deref(),
+                                        let updated = delegate.update_note(
+                                            &final_note_id,
+                                            new_title.as_deref(),
+                                            new_content.as_deref(),
+                                        );
+                                        if !updated {
+                                            error!(
+                                                "笔记保存失败: update_note 返回 false (note_id={final_note_id})"
                                             );
+                                            return;
                                         }
+
                                         if let Some(note) = this.notes_cache.get_mut(index) {
                                             note.id = final_note_id;
                                             if let Some(ref t) = new_title {
@@ -613,6 +632,8 @@ impl PdfReaderView {
                                             if let Some(ref c) = new_content {
                                                 note.content = c.clone();
                                             }
+                                        } else {
+                                            this.reload_notes(cx);
                                         }
                                         this.editing_note_index = None;
                                         this.edit_note_title = None;
@@ -682,6 +703,10 @@ impl PdfReaderView {
                                     .h(rems(1.5))
                                     .w(rems(1.5))
                                     .on_click(cx.listener(|this, _, _, cx| {
+                                        // 已在编辑时不要重复塞 temp 笔记
+                                        if this.editing_note_index.is_some() {
+                                            return;
+                                        }
                                         let lit_id = this
                                             .document_id
                                             .split("::")

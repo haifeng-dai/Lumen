@@ -222,6 +222,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "添付ファイルを同期",
         I18nKey::FileSyncLastRun => "最終ファイル同期",
         I18nKey::FileSyncSummaryUnavailable => "ファイル同期サマリーを取得できません",
+        I18nKey::FileSyncNeedsAttention => {
+            "ファイル同期に要対応：競合・分岐・復元不能なオブジェクトがあります"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "ファイル同期待機中：データベース確認またはオンデマンドダウンロードが未完了"
+        }
         I18nKey::SyncSkippedBusy => "同期が実行中のため、今回の要求は開始されませんでした",
         I18nKey::SyncUploaded => "アップロード",
         I18nKey::SyncDownloaded => "ダウンロード",
@@ -239,6 +245,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "データベースの識別子が一致しません",
         I18nKey::DatabaseSyncConflict => "データベース同期に競合があります",
         I18nKey::DatabaseSyncPartialFailure => "データベース同期が一部失敗しました",
+        I18nKey::DatabaseSyncPendingCount => "同期待ちの新しい変更",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "同期中に新しいローカル変更が発生し、まだ同期待ちです"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "リモートデータのバージョンがローカル同期ベースラインを下回っています（サーバーロールバックの可能性）。ローカルデータは上書きされていません。サーバーのバックアップを確認してください"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "バージョンの後退",
         I18nKey::DatabaseSyncError => "データベース同期エラー",
         I18nKey::DatabaseSyncUploaded => "アップロード済み",
         I18nKey::DatabaseSyncDownloaded => "ダウンロード済み",
@@ -416,6 +430,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "削除済みデータを整理",
         I18nKey::PurgeDeletedData => "削除済みデータを完全に整理（ローカル + リモート）",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "削除済みデータの安全な整理は現在サポートされていません。デバイスの水位と保持期間プロトコルがなく、続行するとオフラインデバイスの増分同期が壊れます"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "リモートファイルストレージの初期化",

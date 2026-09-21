@@ -22,22 +22,24 @@ impl super::LiteratureDetailView {
 
         let ids_changed = self.state.selected_ids != current_selected;
 
+        // 仅当文献确实存在且 version 不同才判定变更，避免 DataStore 加载中误触发重载
         let version_changed = if selected_count == 1 {
             current_selected
                 .first()
                 .and_then(|id| store.literatures.iter().find(|l| l.id == *id))
-                .is_none_or(|lit| lit.version != self.state.content_version)
+                .is_some_and(|lit| lit.version != self.state.content_version)
         } else {
             false
         };
 
+        // 仅当标签在 store 中存在且颜色不同才判定变更
         let tags_changed = if let DetailMode::Single(ref buffer) = self.state.mode {
             buffer.tags.iter().any(|tag_data| {
                 store
                     .tags
                     .iter()
                     .find(|(t, _)| t.name == tag_data.name)
-                    .is_none_or(|(t, _)| t.color != tag_data.color)
+                    .is_some_and(|(t, _)| t.color != tag_data.color)
             })
         } else {
             false
@@ -65,9 +67,12 @@ impl super::LiteratureDetailView {
         } else if let Some(buffer) = self.sync_build_buffer(cx) {
             self.state.content_version = buffer.literature.version;
             self.state.mode = DetailMode::Single(Box::new(buffer));
-            let lit_id = &self.state.selected_ids[0];
-            let notes = self.app.literature_service.list_notes(&self.app.db, lit_id);
-            self.notes_cache = notes;
+            // 编辑中不要用 DB 列表覆盖 notes_cache，否则 temp 笔记会被冲掉
+            if self.editing_note_index.is_none() {
+                let lit_id = &self.state.selected_ids[0];
+                let notes = self.app.literature_service.list_notes(&self.app.db, lit_id);
+                self.notes_cache = notes;
+            }
         } else {
             self.state.mode = DetailMode::None;
         }

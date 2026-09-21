@@ -115,39 +115,10 @@ pub async fn clear_all_data(manager: &MySqlManager) -> Result<()> {
     Ok(())
 }
 
-pub async fn purge_deleted_data(manager: &MySqlManager) -> Result<usize> {
-    let use_remote = manager.config.read().unwrap().use_remote;
-    if !use_remote {
-        info!("MySQL: 远程同步未启用，跳过已删除数据清理");
-        return Ok(0);
-    }
-
-    let pool = manager.get_pool().await?;
-    let mut conn = pool.get_conn().await?;
-    let tables = [
-        "literature_notes",
-        "literature_authors",
-        "literature_folders",
-        "literature_tags",
-        "literature_citations",
-        "attachments",
-        "annotations",
-        "literatures",
-        "folders",
-        "tags",
-        "feeds",
-        "feed_items",
-        "authors",
-        "publications",
-    ];
-
-    let mut total = 0;
-    for table in tables {
-        total += conn
-            .exec_drop(format!("DELETE FROM `{table}` WHERE is_deleted = 1"), ())
-            .await
-            .map(|_| conn.affected_rows() as usize)?;
-    }
-    info!("MySQL: 已物理清理 {total} 条软删除记录");
-    Ok(total)
+/// DB-003 immediate block: physical tombstone purge is unsafe without a
+/// device-watermark / retention protocol. Never issue DELETE on this path.
+pub async fn purge_deleted_data(_manager: &MySqlManager) -> Result<usize> {
+    Err(anyhow!(
+        "remote tombstone purge is currently unsupported: missing device watermark and retention protocol"
+    ))
 }

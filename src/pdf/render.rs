@@ -391,6 +391,10 @@ impl Render for PdfReaderView {
                                     .flex_grow(1.0)
                                     .h_0()
                                     .w_full()
+                                    // Capture 阶段只清理菜单/工具栏。
+                                    // 笔记编辑器叠在阅读区上方，几何 hitbox 重叠，
+                                    // 不能在这里清 note_editor，否则点输入框会被误关。
+                                    // 点击外部关闭走 handle_content_mouse_up（overlay_button_clicked 保护）。
                                     .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                                         this.annotation_context_menu = None;
                                         this.pin_context_menu = None;
@@ -400,9 +404,6 @@ impl Render for PdfReaderView {
                                         this.selection_start = None;
                                         this.selection_end = None;
                                         this.selected_text = None;
-                                        this.annotation_state.note_editor = None;
-                                        this.note_input_state = None;
-                                        this.note_input_sub = None;
                                         cx.notify();
                                     }))
                                     .child(self.render_main_content(window, cx)),

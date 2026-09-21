@@ -26,6 +26,8 @@ pub use literature::{BatchRenameSaveError, BatchRenameSummary};
 pub struct MainApp {
     /// 同步状态（跨线程共享）
     pub sync_state: Arc<Mutex<SyncStateInner>>,
+    /// OPS-001: 危险维护操作二次确认槽 (op_id, Instant)
+    pub dangerous_op_confirm: Mutex<Option<(String, std::time::Instant)>>,
     /// 应用配置
     pub config: Mutex<AppConfig>,
     /// 文献服务

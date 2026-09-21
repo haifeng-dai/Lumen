@@ -5,7 +5,7 @@ use crate::sync::progress::{DatabaseSyncStatus, SyncStateInner};
 use anyhow::{Result, anyhow};
 use database::{
     Database, DatabaseSyncSummary, LocalDirtyRecord, MySqlManager, RemoteRecord, SyncConflict,
-    SyncEntityType, VersionedWriteResult,
+    SyncEntityType, UploadConfirmation, VersionedWriteResult,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
@@ -143,7 +143,11 @@ pub struct RemoteBatch {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DownloadResult {
-    Applied { records: usize, conflicts: usize },
+    Applied {
+        records: usize,
+        conflicts: usize,
+        version_regressions: usize,
+    },
     IdentityRequired,
     IdentityMismatch,
 }
@@ -151,6 +155,7 @@ pub enum DownloadResult {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UploadResult {
     pub uploaded: usize,
+    pub superseded: usize,
     pub conflicts: usize,
     pub failures: usize,
     pub complete: bool,
@@ -162,6 +167,7 @@ struct UploadProgress {
     completed: usize,
     uploaded: usize,
     conflicts: usize,
+    superseded: usize,
     failures: usize,
 }
 
@@ -277,6 +283,14 @@ impl DatabaseSyncService {
                         notify();
                     }
                 }
+                // STATE-003: 刷新正交 flags
+                let db_conflicts = self.db.list_sync_conflicts().map(|v| v.len()).unwrap_or(0);
+                let file_conflicts = self.db.count_attachment_file_conflicts().unwrap_or(0);
+                let partial = matches!(
+                    state.database_sync_status,
+                    DatabaseSyncStatus::PartialFailure
+                ) as usize;
+                state.refresh_composite(db_conflicts, file_conflicts, 0, 0, partial);
             }
         }
     }
@@ -306,12 +320,21 @@ impl DatabaseSyncService {
         mysql.clear_all_data().await
     }
 
+    /// DB-003: remote tombstone physical purge is disabled until a safe
+    /// device-watermark / retention protocol exists. Do not fall through to
+    /// MySQL DELETE or local purge_all_deleted from this entry point.
     pub async fn purge_deleted_data(&self) -> Result<usize> {
-        let mysql = self
-            .mysql
+        Err(anyhow!(
+            "remote tombstone purge is currently unsupported: missing device watermark and retention protocol"
+        ))
+    }
+
+    /// COORD-001: 远端数据库是否启用（无 MySQL 或 use_remote=false 时为 Disabled）。
+    pub fn remote_database_enabled(&self) -> bool {
+        self.mysql
             .as_ref()
-            .ok_or_else(|| anyhow!("MySQL is not configured"))?;
-        mysql.purge_deleted_data().await
+            .map(|m| m.get_config().use_remote)
+            .unwrap_or(false)
     }
 
     /// Run one database-only cycle. Identity transitions are deliberately
@@ -325,6 +348,7 @@ impl DatabaseSyncService {
         let Some(mysql) = &self.mysql else {
             self.save_summary(DatabaseSyncSummary {
                 complete: true,
+                identity_error: Some("Disabled".into()),
                 updated_at: chrono::Utc::now().timestamp(),
                 ..Default::default()
             })?;
@@ -334,6 +358,7 @@ impl DatabaseSyncService {
         if !mysql.get_config().use_remote {
             self.save_summary(DatabaseSyncSummary {
                 complete: true,
+                identity_error: Some("Disabled".into()),
                 updated_at: chrono::Utc::now().timestamp(),
                 ..Default::default()
             })?;
@@ -383,13 +408,6 @@ impl DatabaseSyncService {
                     }
                     _ => DatabaseSyncStatus::IdentityMismatch,
                 });
-                self.save_summary(DatabaseSyncSummary {
-                    complete: false,
-                    failures: 1,
-                    identity_error: Some(format!("{identity:?}")),
-                    updated_at: chrono::Utc::now().timestamp(),
-                    ..Default::default()
-                })?;
                 result.failures = 1;
             }
             IdentityDecision::Ready {
@@ -427,8 +445,40 @@ impl DatabaseSyncService {
                 }
             }
         }
-        self.set_status(status_for_run(&result));
+        let mut status = status_for_run(&result);
+        // STATE-002: 终态必须由持久化冲突真源派生
+        let persistent_conflicts = self.db.list_sync_conflicts().map(|v| v.len()).unwrap_or(0);
+        status = apply_persistent_db_conflict_overlay(status, persistent_conflicts);
+        self.set_status(status);
+        // SUMMARY-001: 整轮只提交一次摘要；失败不得把状态标为成功
+        if let Err(error) = self.persist_round_summary(&result) {
+            self.set_status(DatabaseSyncStatus::Error(error.to_string()));
+            return Err(error);
+        }
         Ok(result)
+    }
+
+    /// STATE-002: 应用启动/恢复时从持久化冲突重算数据库同步状态。
+    pub fn restore_status_from_persistent_conflicts(&self) -> Result<DatabaseSyncStatus> {
+        let persistent = self.db.list_sync_conflicts()?.len();
+        let file_conflicts = self.db.count_attachment_file_conflicts().unwrap_or(0);
+        let base = if persistent > 0 || file_conflicts > 0 {
+            DatabaseSyncStatus::Conflict
+        } else {
+            match self.last_summary().ok().flatten() {
+                Some(summary) if !summary.complete && summary.failures > 0 => {
+                    DatabaseSyncStatus::PartialFailure
+                }
+                Some(summary) if summary.version_regressions > 0 => {
+                    DatabaseSyncStatus::RemoteVersionRegression
+                }
+                Some(summary) if summary.superseded > 0 => DatabaseSyncStatus::PendingLocalChanges,
+                _ => DatabaseSyncStatus::Idle,
+            }
+        };
+        let status = apply_persistent_db_conflict_overlay(base, persistent.max(file_conflicts));
+        self.set_status(status.clone());
+        Ok(status)
     }
 
     /// Read-only identity preflight. No local or remote data is written.
@@ -673,7 +723,9 @@ impl DatabaseSyncService {
         };
         if let Some(context) = context {
             let (applied, conflicts) = match &result {
-                DownloadResult::Applied { records, conflicts } => (*records, *conflicts),
+                DownloadResult::Applied {
+                    records, conflicts, ..
+                } => (*records, *conflicts),
                 _ => (0, 0),
             };
             context.event(
@@ -692,7 +744,12 @@ impl DatabaseSyncService {
     /// Upload dirty database records only. This path deliberately has no file
     /// backend or download dependency and is not connected to the old engine.
     pub async fn upload_to_remote(&self) -> Result<UploadResult> {
-        self.upload_to_remote_with_context(None).await
+        let result = self.upload_to_remote_with_context(None).await?;
+        self.persist_round_summary(&DatabaseSyncRunResult {
+            upload: Some(result.clone()),
+            ..Default::default()
+        })?;
+        Ok(result)
     }
 
     async fn upload_to_remote_with_context(
@@ -708,13 +765,7 @@ impl DatabaseSyncService {
             .await?
             .ok_or_else(|| anyhow!("remote library identity is missing"))?;
         if !upload_identity_matches(local.library_id.as_deref(), &remote.library_id) {
-            self.save_summary(DatabaseSyncSummary {
-                complete: false,
-                failures: 1,
-                identity_error: Some("database library identity mismatch".into()),
-                updated_at: chrono::Utc::now().timestamp(),
-                ..Default::default()
-            })?;
+            // SUMMARY-001: 阶段不写最终摘要
             return Err(anyhow!("database library identity mismatch"));
         }
         let records = match context {
@@ -760,7 +811,7 @@ impl DatabaseSyncService {
             }
             None => upload().await?,
         };
-        self.persist_upload_summary(&result)?;
+        // SUMMARY-001: 上传阶段不写最终摘要；由 run_with_context / 公共入口聚合提交
         Ok(result)
     }
 
@@ -780,6 +831,10 @@ impl DatabaseSyncService {
             let entity_type = record.entity.as_str();
             match self.upload_one(mysql, record, context).await {
                 Ok(UploadOne::Uploaded) => result.uploaded += 1,
+                Ok(UploadOne::Superseded) => {
+                    result.superseded += 1;
+                    result.complete = false;
+                }
                 Ok(UploadOne::Conflict) => result.conflicts += 1,
                 Err(error) => {
                     if let Some(context) = context {
@@ -805,6 +860,7 @@ impl DatabaseSyncService {
             current.completed += 1;
             current.uploaded = result.uploaded;
             current.conflicts = result.conflicts;
+            current.superseded = result.superseded;
             current.failures = result.failures;
             let should_log = should_log_upload_progress(current.completed, last_progress.elapsed());
             let completed = current.completed;
@@ -839,7 +895,7 @@ impl DatabaseSyncService {
         let outcome = mysql
             .write_versioned_entity_with_context(
                 &record.payload,
-                record.expected_version,
+                record.expected_remote_version,
                 context.map(|value| value.run_id.as_str()),
             )
             .await?;
@@ -869,13 +925,7 @@ impl DatabaseSyncService {
             } else {
                 DownloadResult::IdentityMismatch
             };
-            self.save_summary(DatabaseSyncSummary {
-                complete: false,
-                failures: 1,
-                identity_error: Some(format!("{result:?}")),
-                updated_at: chrono::Utc::now().timestamp(),
-                ..Default::default()
-            })?;
+            // SUMMARY-001: 阶段不写最终摘要
             return Ok(result);
         }
         let remote_batch = if local.last_sequence == 0 {
@@ -1012,7 +1062,9 @@ impl DatabaseSyncService {
         };
         if let Some(context) = context {
             let (applied, conflicts) = match &result {
-                DownloadResult::Applied { records, conflicts } => (*records, *conflicts),
+                DownloadResult::Applied {
+                    records, conflicts, ..
+                } => (*records, *conflicts),
                 _ => (0, 0),
             };
             context.event(
@@ -1071,7 +1123,13 @@ impl DatabaseSyncService {
         local_library_id: Option<&str>,
         batch: &RemoteBatch,
     ) -> Result<DownloadResult> {
-        self.download_with_identity(local_library_id, batch, None)
+        let result = self.download_with_identity(local_library_id, batch, None)?;
+        // 独立调用路径：按本次下载结果提交单侧摘要
+        self.persist_round_summary(&DatabaseSyncRunResult {
+            download: Some(result.clone()),
+            ..Default::default()
+        })?;
+        Ok(result)
     }
 
     fn download_with_identity(
@@ -1080,103 +1138,106 @@ impl DatabaseSyncService {
         batch: &RemoteBatch,
         identity: Option<(&str, &str)>,
     ) -> Result<DownloadResult> {
+        // SUMMARY-001: 阶段函数只返回类型化结果，不写最终摘要
         match local_library_id {
-            None => {
-                self.save_summary(DatabaseSyncSummary {
-                    complete: false,
-                    failures: 1,
-                    identity_error: Some("identity required".into()),
-                    updated_at: chrono::Utc::now().timestamp(),
-                    ..Default::default()
-                })?;
-                return Ok(DownloadResult::IdentityRequired);
-            }
-            Some(id) if id != batch.library_id => {
-                self.save_summary(DatabaseSyncSummary {
-                    complete: false,
-                    failures: 1,
-                    identity_error: Some("identity mismatch".into()),
-                    updated_at: chrono::Utc::now().timestamp(),
-                    ..Default::default()
-                })?;
-                return Ok(DownloadResult::IdentityMismatch);
-            }
+            None => return Ok(DownloadResult::IdentityRequired),
+            Some(id) if id != batch.library_id => return Ok(DownloadResult::IdentityMismatch),
             Some(_) => {}
         }
-        let mut accepted = Vec::new();
-        let mut conflicts = Vec::new();
-        for record in &batch.records {
-            let entity = record.entity_type;
-            let key = record
-                .key()
-                .ok_or_else(|| anyhow!("remote record missing key"))?;
-            let state = self.db.get_download_state(entity, &key)?;
-            let should_apply = match state {
-                None => true,
-                Some((_synced_version, dirty)) if !dirty => true,
-                Some((synced_version, true)) if record.version > synced_version => {
-                    conflicts.push(SyncConflict {
-                        entity_type: entity_name(record.entity_type).to_string(),
-                        entity_id: record.canonical_key().unwrap_or_default(),
-                        local_record: serde_json::json!({"entity_key": record.canonical_key()})
-                            .to_string(),
-                        remote_record: serde_json::to_string(&record.payload)?,
-                        remote_version: record.version,
-                        detected_at: chrono::Utc::now().timestamp(),
-                    });
-                    false
-                }
-                Some(_) => false,
-            };
-            if should_apply {
-                accepted.push(record.clone());
-            }
+        // DB-002: decide + apply + conflict persist + sequence/identity in one
+        // SQLite transaction inside database. No services-side state pre-read.
+        let outcome = self.db.apply_remote_download_atomically(
+            batch.last_sequence,
+            &batch.records,
+            identity,
+        )?;
+        if outcome.version_regressions > 0 {
+            warn!(
+                "database sync download skipped remote version regressions: {}",
+                outcome.version_regressions
+            );
         }
-        let records = self
-            .db
-            .apply_remote_download_batch_with_conflicts_and_identity(
-                batch.last_sequence,
-                &accepted,
-                &conflicts,
-                identity,
-            )?;
-        if records > 0 {
+        if outcome.applied > 0 {
             if let Some(notify) = &self.notify_data {
                 notify();
             }
         }
-        self.save_summary(DatabaseSyncSummary {
-            downloaded: records,
-            conflicts: conflicts.len(),
-            complete: true,
-            updated_at: chrono::Utc::now().timestamp(),
-            ..Default::default()
-        })?;
         Ok(DownloadResult::Applied {
-            records,
-            conflicts: conflicts.len(),
+            records: outcome.applied,
+            conflicts: outcome.conflicts,
+            version_regressions: outcome.version_regressions,
         })
+    }
+
+    /// SUMMARY-001 + STATE-002: 聚合整轮结果并一次性持久化数据库同步摘要。
+    /// 持久化冲突存在时摘要不得 complete，冲突计数不低于真源总数。
+    pub fn persist_round_summary(&self, result: &DatabaseSyncRunResult) -> Result<()> {
+        let mut summary = Self::summarize_round(result);
+        let persistent_db = self.db.list_sync_conflicts().map(|v| v.len()).unwrap_or(0);
+        let persistent_file = self.db.count_attachment_file_conflicts().unwrap_or(0);
+        if persistent_db > summary.conflicts {
+            summary.conflicts = persistent_db;
+        }
+        if persistent_db > 0 || persistent_file > 0 {
+            summary.complete = false;
+        }
+        self.save_summary(summary)
+    }
+
+    fn summarize_round(result: &DatabaseSyncRunResult) -> DatabaseSyncSummary {
+        let (downloaded, download_conflicts, version_regressions, download_identity) =
+            match result.download.as_ref() {
+                Some(DownloadResult::Applied {
+                    records,
+                    conflicts,
+                    version_regressions,
+                }) => (*records, *conflicts, *version_regressions, None),
+                Some(other) => (0, 0, 0, Some(format!("download:{other:?}"))),
+                None => (0, 0, 0, None),
+            };
+        let upload = result.upload.clone().unwrap_or_default();
+        let identity_error = download_identity.or_else(|| match result.identity.as_ref() {
+            Some(IdentityDecision::NeedsRemoteInitialization) => {
+                Some("NeedsRemoteInitialization".to_string())
+            }
+            Some(IdentityDecision::NeedsRemoteAdoption { .. }) => {
+                Some("NeedsRemoteAdoption".to_string())
+            }
+            Some(IdentityDecision::Mismatch { .. }) => Some("IdentityMismatch".to_string()),
+            _ => None,
+        });
+        let mut failures = result.failures.max(upload.failures);
+        if identity_error.is_some() && failures == 0 {
+            failures = 1;
+        }
+        let complete = failures == 0
+            && upload.conflicts == 0
+            && upload.superseded == 0
+            && download_conflicts == 0
+            && version_regressions == 0
+            && identity_error.is_none();
+        DatabaseSyncSummary {
+            uploaded: upload.uploaded,
+            superseded: upload.superseded,
+            downloaded,
+            conflicts: download_conflicts + upload.conflicts,
+            failures,
+            version_regressions,
+            complete,
+            updated_at: chrono::Utc::now().timestamp(),
+            identity_error,
+        }
     }
 
     fn save_summary(&self, summary: DatabaseSyncSummary) -> Result<()> {
         self.db.set_database_sync_summary(&summary)?;
         Ok(())
     }
-
-    fn persist_upload_summary(&self, result: &UploadResult) -> Result<()> {
-        self.save_summary(DatabaseSyncSummary {
-            uploaded: result.uploaded,
-            conflicts: result.conflicts,
-            failures: result.failures,
-            complete: result.complete,
-            updated_at: chrono::Utc::now().timestamp(),
-            ..Default::default()
-        })
-    }
 }
 
 enum UploadOne {
     Uploaded,
+    Superseded,
     Conflict,
 }
 
@@ -1187,8 +1248,17 @@ fn apply_upload_outcome(
 ) -> Result<UploadOne> {
     match outcome {
         VersionedWriteResult::Applied { version, .. } => {
-            db.confirm_upload(record.entity, &record.key, version)?;
-            Ok(UploadOne::Uploaded)
+            match db.confirm_uploaded_snapshot(
+                record.entity,
+                &record.key,
+                record.local_generation,
+                record.expected_remote_version,
+                version,
+            )? {
+                UploadConfirmation::Confirmed => Ok(UploadOne::Uploaded),
+                UploadConfirmation::Superseded => Ok(UploadOne::Superseded),
+                confirmation => Err(anyhow!("upload confirmation failed: {confirmation:?}")),
+            }
         }
         VersionedWriteResult::VersionConflict {
             current_version,
@@ -1202,7 +1272,9 @@ fn apply_upload_outcome(
                     .as_ref()
                     .map(|r| r.payload.to_string())
                     .unwrap_or_else(|| "null".to_string()),
-                remote_version: i64::from(current_version.unwrap_or(record.expected_version)),
+                remote_version: i64::from(
+                    current_version.unwrap_or(record.expected_remote_version),
+                ),
                 detected_at: chrono::Utc::now().timestamp(),
             })?;
             Ok(UploadOne::Conflict)
@@ -1212,6 +1284,23 @@ fn apply_upload_outcome(
 
 fn upload_identity_matches(local: Option<&str>, remote: &str) -> bool {
     local == Some(remote)
+}
+
+fn apply_persistent_db_conflict_overlay(
+    status: DatabaseSyncStatus,
+    persistent_conflicts: usize,
+) -> DatabaseSyncStatus {
+    if persistent_conflicts == 0 {
+        return status;
+    }
+    match status {
+        DatabaseSyncStatus::NeedsRemoteInitialization
+        | DatabaseSyncStatus::NeedsRemoteAdoption
+        | DatabaseSyncStatus::IdentityMismatch
+        | DatabaseSyncStatus::Error(_) => status,
+        // 冲突真源优先于 Idle/Pending/Regression，不得被安静轮次吞掉
+        _ => DatabaseSyncStatus::Conflict,
+    }
 }
 
 fn status_for_run(result: &DatabaseSyncRunResult) -> DatabaseSyncStatus {
@@ -1231,6 +1320,17 @@ fn status_for_run(result: &DatabaseSyncRunResult) -> DatabaseSyncStatus {
         Some(IdentityDecision::Ready { .. }) | None => {}
     }
 
+    // SUMMARY-001 / review: download 阶段的 identity 结果不得被 Ready 预检吞掉
+    match result.download.as_ref() {
+        Some(DownloadResult::IdentityRequired) => {
+            return DatabaseSyncStatus::NeedsRemoteInitialization;
+        }
+        Some(DownloadResult::IdentityMismatch) => {
+            return DatabaseSyncStatus::IdentityMismatch;
+        }
+        _ => {}
+    }
+
     if result.failures > 0 {
         DatabaseSyncStatus::PartialFailure
     } else if result.upload.as_ref().is_some_and(|u| u.conflicts > 0)
@@ -1239,6 +1339,12 @@ fn status_for_run(result: &DatabaseSyncRunResult) -> DatabaseSyncStatus {
         )
     {
         DatabaseSyncStatus::Conflict
+    } else if result.download.as_ref().is_some_and(
+        |d| matches!(d, DownloadResult::Applied { version_regressions, .. } if *version_regressions > 0),
+    ) {
+        DatabaseSyncStatus::RemoteVersionRegression
+    } else if result.upload.as_ref().is_some_and(|u| u.superseded > 0) {
+        DatabaseSyncStatus::PendingLocalChanges
     } else {
         DatabaseSyncStatus::Idle
     }
@@ -1265,6 +1371,10 @@ fn summarize_upload_attempts(attempts: &[Option<UploadOne>]) -> UploadResult {
     for attempt in attempts {
         match attempt {
             Some(UploadOne::Uploaded) => result.uploaded += 1,
+            Some(UploadOne::Superseded) => {
+                result.superseded += 1;
+                result.complete = false;
+            }
             Some(UploadOne::Conflict) => result.conflicts += 1,
             None => {
                 result.failures += 1;
@@ -1446,7 +1556,8 @@ mod tests {
         let record = LocalDirtyRecord {
             entity: SyncEntityType::Tag,
             key: SyncEntityKey::Id(tag.id.clone()),
-            expected_version: 0,
+            local_generation: i64::from(before.version),
+            expected_remote_version: 0,
             payload: database::SyncEntityPayload::Tag(before.clone()),
         };
         assert!(matches!(
@@ -1491,7 +1602,8 @@ mod tests {
         let dirty = LocalDirtyRecord {
             entity: SyncEntityType::Tag,
             key: SyncEntityKey::Id(tag.id.clone()),
-            expected_version: 1,
+            local_generation: i64::from(local.version),
+            expected_remote_version: 1,
             payload: database::SyncEntityPayload::Tag(local),
         };
         let remote = super::tests::record("remote-id", 9);
@@ -1534,7 +1646,8 @@ mod tests {
             LocalDirtyRecord {
                 entity: SyncEntityType::Tag,
                 key: SyncEntityKey::Id(tag.id.clone()),
-                expected_version: 1,
+                local_generation: i64::from(tag.version + 1),
+                expected_remote_version: 1,
                 payload: database::SyncEntityPayload::Tag(local),
             },
             VersionedWriteResult::VersionConflict {
@@ -1565,6 +1678,7 @@ mod tests {
             result,
             UploadResult {
                 uploaded: 1,
+                superseded: 0,
                 conflicts: 0,
                 failures: 1,
                 complete: false
@@ -1618,8 +1732,14 @@ mod tests {
     fn remote_delete_clean_record_is_applied_as_clean_tombstone() {
         let db = Arc::new(Database::new(":memory:").unwrap());
         let tag = db.create_tag("local", None).unwrap();
-        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 1)
-            .unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            1,
+        )
+        .unwrap();
         let mut remote = record(&tag.id, 8);
         remote.payload["is_deleted"] = serde_json::json!(true);
         let service = DatabaseSyncService::new(db.clone());
@@ -1636,7 +1756,8 @@ mod tests {
                 .unwrap(),
             DownloadResult::Applied {
                 records: 1,
-                conflicts: 0
+                conflicts: 0,
+                version_regressions: 0,
             }
         );
         assert_eq!(
@@ -1672,7 +1793,8 @@ mod tests {
                 .unwrap(),
             DownloadResult::Applied {
                 records: 0,
-                conflicts: 1
+                conflicts: 1,
+                version_regressions: 0,
             }
         );
         assert_eq!(
@@ -1689,24 +1811,152 @@ mod tests {
         let db = Arc::new(Database::new(":memory:").unwrap());
         let service = DatabaseSyncService::new(db.clone());
         service
-            .persist_upload_summary(&UploadResult {
-                uploaded: 2,
-                conflicts: 1,
+            .persist_round_summary(&DatabaseSyncRunResult {
+                upload: Some(UploadResult {
+                    uploaded: 2,
+                    superseded: 0,
+                    conflicts: 1,
+                    failures: 1,
+                    complete: false,
+                }),
                 failures: 1,
-                complete: false,
+                ..Default::default()
             })
             .unwrap();
         assert_eq!(
             db.get_database_sync_summary().unwrap(),
             Some(DatabaseSyncSummary {
                 uploaded: 2,
+                superseded: 0,
                 conflicts: 1,
                 failures: 1,
+                version_regressions: 0,
                 complete: false,
                 updated_at: db.get_database_sync_summary().unwrap().unwrap().updated_at,
                 identity_error: None,
                 downloaded: 0
             })
+        );
+    }
+
+    #[test]
+    fn summary_serde_defaults_pending_count_for_legacy_json() {
+        let old = r#"{"uploaded":1,"downloaded":2,"conflicts":0,"failures":0,"complete":true,"updated_at":1,"identity_error":null}"#;
+        let summary: DatabaseSyncSummary = serde_json::from_str(old).unwrap();
+        assert_eq!(summary.superseded, 0);
+        let mut summary = summary;
+        summary.superseded = 3;
+        let encoded = serde_json::to_string(&summary).unwrap();
+        assert!(encoded.contains("\"superseded\":3"));
+        assert!(encoded.contains("\"version_regressions\":0"));
+        let old = r#"{"uploaded":1,"downloaded":2,"conflicts":0,"failures":0,"complete":true,"updated_at":1,"identity_error":null}"#;
+        let legacy: DatabaseSyncSummary = serde_json::from_str(old).unwrap();
+        assert_eq!(legacy.version_regressions, 0);
+    }
+
+    #[test]
+    fn summary_001_round_aggregate_keeps_download_and_upload_counts() {
+        let db = Arc::new(Database::new(":memory:").unwrap());
+        let service = DatabaseSyncService::new(db.clone());
+        let result = DatabaseSyncRunResult {
+            download: Some(DownloadResult::Applied {
+                records: 4,
+                conflicts: 2,
+                version_regressions: 1,
+            }),
+            upload: Some(UploadResult {
+                uploaded: 3,
+                superseded: 1,
+                conflicts: 1,
+                failures: 0,
+                complete: false,
+            }),
+            identity: Some(IdentityDecision::Ready {
+                full_snapshot_required: false,
+            }),
+            failures: 0,
+        };
+        service.persist_round_summary(&result).unwrap();
+        let summary = db.get_database_sync_summary().unwrap().unwrap();
+        assert_eq!(summary.downloaded, 4);
+        assert_eq!(summary.uploaded, 3);
+        assert_eq!(summary.conflicts, 3, "download+upload conflicts 均须保留");
+        assert_eq!(summary.superseded, 1);
+        assert_eq!(summary.version_regressions, 1);
+        assert!(!summary.complete);
+        assert!(summary.identity_error.is_none());
+    }
+
+    #[test]
+    fn state_002_persistent_conflicts_force_conflict_status_and_incomplete_summary() {
+        let db = Arc::new(Database::new(":memory:").unwrap());
+        db.set_local_library_id("same").unwrap();
+        let service = DatabaseSyncService::new(db.clone());
+
+        // 先写入一条持久化冲突（真源）
+        let tag = db.create_tag("conflicted", None).unwrap();
+        db.save_sync_conflict(&SyncConflict {
+            entity_type: "tags".to_string(),
+            entity_id: tag.id.clone(),
+            local_record: "{}".into(),
+            remote_record: "{}".into(),
+            remote_version: 2,
+            detected_at: 1,
+        })
+        .unwrap();
+
+        // 安静轮次：无新冲突，status_for_run 本应 Idle
+        let quiet = DatabaseSyncRunResult {
+            identity: Some(IdentityDecision::Ready {
+                full_snapshot_required: false,
+            }),
+            download: Some(DownloadResult::Applied {
+                records: 1,
+                conflicts: 0,
+                version_regressions: 0,
+            }),
+            upload: Some(UploadResult {
+                complete: true,
+                ..Default::default()
+            }),
+            failures: 0,
+        };
+        assert_eq!(status_for_run(&quiet), DatabaseSyncStatus::Idle);
+        let overlaid = apply_persistent_db_conflict_overlay(
+            status_for_run(&quiet),
+            db.list_sync_conflicts().unwrap().len(),
+        );
+        assert_eq!(overlaid, DatabaseSyncStatus::Conflict);
+
+        service.persist_round_summary(&quiet).unwrap();
+        let summary = db.get_database_sync_summary().unwrap().unwrap();
+        assert!(!summary.complete, "持久化冲突存在时摘要不得 complete");
+        assert!(summary.conflicts >= 1);
+
+        // 恢复入口也必须报 Conflict
+        let restored = service.restore_status_from_persistent_conflicts().unwrap();
+        assert_eq!(restored, DatabaseSyncStatus::Conflict);
+    }
+
+    #[test]
+    fn state_002_identity_error_still_wins_over_persistent_conflicts() {
+        let status = apply_persistent_db_conflict_overlay(DatabaseSyncStatus::IdentityMismatch, 3);
+        assert_eq!(status, DatabaseSyncStatus::IdentityMismatch);
+    }
+
+    #[test]
+    fn state_002_identity_block_is_not_complete() {
+        let summary = DatabaseSyncService::summarize_round(&DatabaseSyncRunResult {
+            download: Some(DownloadResult::IdentityMismatch),
+            ..Default::default()
+        });
+        assert!(!summary.complete);
+        assert_eq!(summary.failures, 1);
+        assert!(
+            summary
+                .identity_error
+                .as_deref()
+                .is_some_and(|e| e.contains("IdentityMismatch"))
         );
     }
 
@@ -1724,7 +1974,8 @@ mod tests {
             service.download(Some("same"), &batch).unwrap(),
             DownloadResult::Applied {
                 records: 1,
-                conflicts: 0
+                conflicts: 0,
+                version_regressions: 0,
             }
         );
         assert_eq!(db.get_local_sync_state().unwrap().last_sequence, 1);
@@ -1751,7 +2002,8 @@ mod tests {
             service.download(Some("same"), &batch).unwrap(),
             DownloadResult::Applied {
                 records: 0,
-                conflicts: 1
+                conflicts: 1,
+                version_regressions: 0,
             }
         );
         assert_eq!(db.get_local_sync_state().unwrap().last_sequence, 2);
@@ -1764,6 +2016,98 @@ mod tests {
                 .map(|(tag, _)| tag.name.as_str())
                 .unwrap(),
             "local"
+        );
+        let conflict = db.list_sync_conflicts().unwrap().pop().unwrap();
+        let local_payload: serde_json::Value =
+            serde_json::from_str(&conflict.local_record).unwrap();
+        assert_eq!(local_payload["name"], "local");
+        assert_eq!(local_payload["is_dirty"], true);
+        let remote_payload: serde_json::Value =
+            serde_json::from_str(&conflict.remote_record).unwrap();
+        assert_eq!(remote_payload["name"], "remote");
+    }
+
+    #[test]
+    fn clean_remote_version_regression_is_not_applied_as_download() {
+        let db = Arc::new(Database::new(":memory:").unwrap());
+        db.set_local_library_id("same").unwrap();
+        let local = db.create_tag("local", None).unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(local.id.clone()),
+            1,
+            0,
+            10,
+        )
+        .unwrap();
+        let service = DatabaseSyncService::new(db.clone());
+        let batch = RemoteBatch {
+            library_id: "same".into(),
+            last_sequence: 5,
+            records: vec![record(&local.id, 4)],
+        };
+        assert_eq!(
+            service.download(Some("same"), &batch).unwrap(),
+            DownloadResult::Applied {
+                records: 0,
+                conflicts: 0,
+                version_regressions: 1,
+            }
+        );
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(local.id.clone()))
+                .unwrap(),
+            Some((10, false))
+        );
+        assert!(db.list_sync_conflicts().unwrap().is_empty());
+        assert_eq!(
+            db.get_all_tags_with_counts()
+                .unwrap()
+                .iter()
+                .find(|(tag, _)| tag.id == local.id)
+                .map(|(tag, _)| tag.name.as_str())
+                .unwrap(),
+            "local"
+        );
+        assert_eq!(
+            status_for_run(&DatabaseSyncRunResult {
+                download: Some(DownloadResult::Applied {
+                    records: 0,
+                    conflicts: 0,
+                    version_regressions: 1,
+                }),
+                ..Default::default()
+            }),
+            DatabaseSyncStatus::RemoteVersionRegression
+        );
+    }
+
+    #[test]
+    fn dirty_remote_version_regression_is_counted_not_conflicted() {
+        let db = Arc::new(Database::new(":memory:").unwrap());
+        db.set_local_library_id("same").unwrap();
+        let local = db.create_tag("local", None).unwrap();
+        db.set_synced_version(SyncEntityType::Tag, &SyncEntityKey::Id(local.id.clone()), 9)
+            .unwrap();
+        let service = DatabaseSyncService::new(db.clone());
+        let batch = RemoteBatch {
+            library_id: "same".into(),
+            last_sequence: 4,
+            records: vec![record(&local.id, 2)],
+        };
+        assert_eq!(
+            service.download(Some("same"), &batch).unwrap(),
+            DownloadResult::Applied {
+                records: 0,
+                conflicts: 0,
+                version_regressions: 1,
+            }
+        );
+        assert!(db.list_sync_conflicts().unwrap().is_empty());
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(local.id.clone()))
+                .unwrap(),
+            Some((9, true))
         );
     }
 
@@ -1788,7 +2132,8 @@ mod tests {
             service.download(Some("same"), &batch).unwrap(),
             DownloadResult::Applied {
                 records: 0,
-                conflicts: 0
+                conflicts: 0,
+                version_regressions: 0,
             }
         );
         assert!(db.list_sync_conflicts().unwrap().is_empty());
@@ -1800,6 +2145,7 @@ mod tests {
             download: Some(DownloadResult::Applied {
                 records: 0,
                 conflicts: 1,
+                version_regressions: 0,
             }),
             upload: Some(UploadResult {
                 conflicts: 1,
@@ -1808,6 +2154,16 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(status_for_run(&conflict), DatabaseSyncStatus::Conflict);
+        assert_eq!(
+            status_for_run(&DatabaseSyncRunResult {
+                upload: Some(UploadResult {
+                    superseded: 1,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            DatabaseSyncStatus::PendingLocalChanges
+        );
         let mut partial = conflict;
         partial.failures = 1;
         assert_eq!(status_for_run(&partial), DatabaseSyncStatus::PartialFailure);
@@ -1843,6 +2199,38 @@ mod tests {
         assert_eq!(
             status_for_run(&DatabaseSyncRunResult::default()),
             DatabaseSyncStatus::Idle
+        );
+        assert_eq!(
+            status_for_run(&DatabaseSyncRunResult {
+                download: Some(DownloadResult::Applied {
+                    records: 0,
+                    conflicts: 0,
+                    version_regressions: 2,
+                }),
+                ..Default::default()
+            }),
+            DatabaseSyncStatus::RemoteVersionRegression
+        );
+        assert_eq!(
+            status_for_run(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::Ready {
+                    full_snapshot_required: false
+                }),
+                download: Some(DownloadResult::IdentityMismatch),
+                ..Default::default()
+            }),
+            DatabaseSyncStatus::IdentityMismatch
+        );
+    }
+
+    #[tokio::test]
+    async fn purge_deleted_data_is_blocked_without_touching_mysql() {
+        let service = DatabaseSyncService::new(Arc::new(Database::new(":memory:").unwrap()));
+        let err = service.purge_deleted_data().await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("remote tombstone purge is currently unsupported"),
+            "unexpected error: {err}"
         );
     }
 

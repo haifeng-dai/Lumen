@@ -215,6 +215,8 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "同步附件",
         I18nKey::FileSyncLastRun => "最近文件同步",
         I18nKey::FileSyncSummaryUnavailable => "文件同步摘要不可用",
+        I18nKey::FileSyncNeedsAttention => "文件同步需要处理：存在冲突、分歧或无法恢复的对象",
+        I18nKey::FileSyncWaitingStatus => "文件同步等待中：数据库确认或按需下载未完成",
         I18nKey::SyncSkippedBusy => "已有同步正在进行，本次请求未启动",
         I18nKey::SyncUploaded => "上传",
         I18nKey::SyncDownloaded => "下载",
@@ -230,6 +232,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "资料库身份不匹配",
         I18nKey::DatabaseSyncConflict => "数据库同步存在冲突",
         I18nKey::DatabaseSyncPartialFailure => "数据库同步部分失败",
+        I18nKey::DatabaseSyncPendingCount => "待同步的新修改",
+        I18nKey::DatabaseSyncPendingLocalChanges => "同步期间产生了新的本地修改，仍待同步",
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "检测到远端数据版本低于本地同步基线（可能服务器回档），本地数据未被覆盖，请核对服务器备份"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "版本回退",
         I18nKey::DatabaseSyncError => "数据库同步错误",
         I18nKey::DatabaseSyncUploaded => "已上传",
         I18nKey::DatabaseSyncDownloaded => "已下载",
@@ -266,6 +274,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "清空云端文件",
         I18nKey::PurgeSyncedDeletions => "清理已删除数据",
         I18nKey::PurgeDeletedData => "彻底清理已删除数据（本地+远程）",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "当前不支持安全清理已删除数据：缺少设备水位与保留期协议，继续执行会破坏离线设备增量同步"
+        }
 
         // PDF Viewer
         I18nKey::PdfViewerSettings => "PDF 阅读器设置",

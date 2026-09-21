@@ -60,10 +60,9 @@ impl MainApp {
         Ok(())
     }
 
+    /// DB-003: unsupported until a safe retention protocol exists.
+    /// Failure must not refresh data/UI as if a purge succeeded.
     pub async fn purge_deleted_data(&self) -> Result<usize> {
-        let total = self.sync_service.purge_deleted_data().await?;
-        self.notify_data_changed();
-        self.notify_ui_changed();
-        Ok(total)
+        self.sync_service.purge_deleted_data().await
     }
 }

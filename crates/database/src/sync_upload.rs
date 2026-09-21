@@ -4,13 +4,14 @@ use crate::mysql::{RelationAuthor, RelationFolder, RelationTag, SyncEntityPayloa
 use crate::{Database, SyncEntityKey, SyncEntityType, canonical_key};
 use anyhow::Result;
 use models::LiteratureNote;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 #[derive(Clone, Debug)]
 pub struct LocalDirtyRecord {
     pub entity: SyncEntityType,
     pub key: SyncEntityKey,
-    pub expected_version: i32,
+    pub local_generation: i64,
+    pub expected_remote_version: i32,
     pub payload: SyncEntityPayload,
 }
 
@@ -27,12 +28,14 @@ impl Database {
                     if self.has_sync_conflict($entity.as_str(), &canonical_key(&key))? {
                         continue;
                     }
-                    let expected_version =
-                        self.get_synced_version($entity, &key)?.unwrap_or(0) as i32;
+                    let expected_remote_version =
+                        i32::try_from(self.get_synced_version($entity, &key)?.unwrap_or(0))?;
+                    let local_generation = value_generation(&payload)?;
                     out.push(LocalDirtyRecord {
                         entity: $entity,
                         key,
-                        expected_version,
+                        local_generation,
+                        expected_remote_version,
                         payload,
                     });
                 }
@@ -63,13 +66,15 @@ impl Database {
             if self.has_sync_conflict(SyncEntityType::Annotation.as_str(), &canonical_key(&key))? {
                 continue;
             }
-            let expected_version = self
+            let expected_remote_version = self
                 .get_synced_version(SyncEntityType::Annotation, &key)?
-                .unwrap_or(0) as i32;
+                .unwrap_or(0);
+            let local_generation = value_generation(&payload)?;
             out.push(LocalDirtyRecord {
                 entity: SyncEntityType::Annotation,
                 key,
-                expected_version,
+                local_generation,
+                expected_remote_version: i32::try_from(expected_remote_version)?,
                 payload,
             });
         }
@@ -109,13 +114,15 @@ impl Database {
             )? {
                 continue;
             }
-            let expected_version = self
+            let expected_remote_version = self
                 .get_synced_version(SyncEntityType::LiteratureAuthor, &key)?
-                .unwrap_or(0) as i32;
+                .unwrap_or(0);
+            let local_generation = i64::from(version);
             out.push(LocalDirtyRecord {
                 entity: SyncEntityType::LiteratureAuthor,
                 key,
-                expected_version,
+                local_generation,
+                expected_remote_version: i32::try_from(expected_remote_version)?,
                 payload,
             });
         }
@@ -137,13 +144,15 @@ impl Database {
             )? {
                 continue;
             }
-            let expected_version = self
+            let expected_remote_version = self
                 .get_synced_version(SyncEntityType::LiteratureFolder, &key)?
-                .unwrap_or(0) as i32;
+                .unwrap_or(0);
+            let local_generation = i64::from(version);
             out.push(LocalDirtyRecord {
                 entity: SyncEntityType::LiteratureFolder,
                 key,
-                expected_version,
+                local_generation,
+                expected_remote_version: i32::try_from(expected_remote_version)?,
                 payload,
             });
         }
@@ -164,13 +173,15 @@ impl Database {
             {
                 continue;
             }
-            let expected_version = self
+            let expected_remote_version = self
                 .get_synced_version(SyncEntityType::LiteratureTag, &key)?
-                .unwrap_or(0) as i32;
+                .unwrap_or(0);
+            let local_generation = i64::from(version);
             out.push(LocalDirtyRecord {
                 entity: SyncEntityType::LiteratureTag,
                 key,
-                expected_version,
+                local_generation,
+                expected_remote_version: i32::try_from(expected_remote_version)?,
                 payload,
             });
         }
@@ -178,34 +189,169 @@ impl Database {
         Ok(out)
     }
 
-    /// Atomically confirms only synchronization metadata; business columns are untouched.
-    pub fn confirm_upload(
+    /// Atomically confirms exactly the snapshot that was uploaded.
+    pub fn confirm_uploaded_snapshot(
         &self,
         entity: SyncEntityType,
         key: &SyncEntityKey,
-        remote_version: i32,
-    ) -> Result<bool> {
-        Ok(self.with_conn(|conn| {
-            let changed = match (entity, key) {
-                (SyncEntityType::Literature, SyncEntityKey::Id(id)) => conn.execute("UPDATE literatures SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Publication, SyncEntityKey::Id(id)) => conn.execute("UPDATE publications SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Author, SyncEntityKey::Id(id)) => conn.execute("UPDATE authors SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Folder, SyncEntityKey::Id(id)) => conn.execute("UPDATE folders SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Tag, SyncEntityKey::Id(id)) => conn.execute("UPDATE tags SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Attachment, SyncEntityKey::Id(id)) => conn.execute("UPDATE attachments SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Feed, SyncEntityKey::Id(id)) => conn.execute("UPDATE feeds SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::FeedItem, SyncEntityKey::Id(id)) => conn.execute("UPDATE feed_items SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::Annotation, SyncEntityKey::Id(id)) => conn.execute("UPDATE annotations SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::LiteratureNote, SyncEntityKey::Id(id)) => conn.execute("UPDATE literature_notes SET is_dirty=0, synced_version=?1 WHERE id=?2", params![remote_version, id])?,
-                (SyncEntityType::LiteratureAuthor, SyncEntityKey::Relation{left,right}) => conn.execute("UPDATE literature_authors SET is_dirty=0, synced_version=?1 WHERE literature_id=?2 AND author_id=?3", params![remote_version,left,right])?,
-                (SyncEntityType::LiteratureFolder, SyncEntityKey::Relation{left,right}) => conn.execute("UPDATE literature_folders SET is_dirty=0, synced_version=?1 WHERE literature_id=?2 AND folder_id=?3", params![remote_version,left,right])?,
-                (SyncEntityType::LiteratureTag, SyncEntityKey::Relation{left,right}) => conn.execute("UPDATE literature_tags SET is_dirty=0, synced_version=?1 WHERE literature_id=?2 AND tag_id=?3", params![remote_version,left,right])?,
-                (SyncEntityType::Citation, SyncEntityKey::Relation{left,right}) => conn.execute("UPDATE literature_citations SET is_dirty=0, synced_version=?1 WHERE source_id=?2 AND target_id=?3", params![remote_version,left,right])?,
-                _ => 0,
+        local_generation: i64,
+        expected_remote_version: i32,
+        accepted_remote_version: i32,
+    ) -> Result<UploadConfirmation> {
+        if local_generation <= 0
+            || accepted_remote_version < 0
+            || accepted_remote_version <= expected_remote_version
+        {
+            return Ok(UploadConfirmation::InvalidGeneration);
+        }
+        Ok(self.with_transaction(|tx| {
+            let state = select_upload_state(tx, entity, key)?;
+            let Some((version, dirty, synced)) = state else {
+                return Ok(UploadConfirmation::Missing);
             };
-            Ok(changed > 0)
+            if synced != i64::from(expected_remote_version) {
+                return Ok(UploadConfirmation::StaleBase);
+            }
+            if !dirty || version < local_generation {
+                return Ok(UploadConfirmation::InvalidGeneration);
+            }
+            let superseded = version > local_generation;
+            update_upload_state(
+                tx,
+                entity,
+                key,
+                !superseded,
+                i64::from(accepted_remote_version),
+            )?;
+            Ok(if superseded {
+                UploadConfirmation::Superseded
+            } else {
+                UploadConfirmation::Confirmed
+            })
         })?)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UploadConfirmation {
+    Confirmed,
+    Superseded,
+    Missing,
+    StaleBase,
+    InvalidGeneration,
+}
+
+fn value_generation(payload: &SyncEntityPayload) -> Result<i64> {
+    let generation = payload.value()["version"]
+        .as_i64()
+        .ok_or_else(|| anyhow::anyhow!("sync payload is missing version"))?;
+    if generation <= 0 {
+        return Err(anyhow::anyhow!("sync payload version must be positive"));
+    }
+    Ok(generation)
+}
+
+fn select_upload_state(
+    tx: &rusqlite::Transaction<'_>,
+    entity: SyncEntityType,
+    key: &SyncEntityKey,
+) -> rusqlite::Result<Option<(i64, bool, i64)>> {
+    macro_rules! one {
+        ($sql:expr, $params:expr) => {
+            tx.query_row($sql, $params, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()
+        };
+    }
+    match (entity, key) {
+        (SyncEntityType::Literature, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM literatures WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Publication, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM publications WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Author, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM authors WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Folder, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM folders WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Tag, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM tags WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Attachment, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM attachments WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Feed, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM feeds WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::FeedItem, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM feed_items WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::Annotation, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM annotations WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::LiteratureNote, SyncEntityKey::Id(id)) => one!(
+            "SELECT version,is_dirty,synced_version FROM literature_notes WHERE id=?1",
+            [id]
+        ),
+        (SyncEntityType::LiteratureAuthor, SyncEntityKey::Relation { left, right }) => one!(
+            "SELECT version,is_dirty,synced_version FROM literature_authors WHERE literature_id=?1 AND author_id=?2",
+            params![left, right]
+        ),
+        (SyncEntityType::LiteratureFolder, SyncEntityKey::Relation { left, right }) => one!(
+            "SELECT version,is_dirty,synced_version FROM literature_folders WHERE literature_id=?1 AND folder_id=?2",
+            params![left, right]
+        ),
+        (SyncEntityType::LiteratureTag, SyncEntityKey::Relation { left, right }) => one!(
+            "SELECT version,is_dirty,synced_version FROM literature_tags WHERE literature_id=?1 AND tag_id=?2",
+            params![left, right]
+        ),
+        (SyncEntityType::Citation, SyncEntityKey::Relation { left, right }) => one!(
+            "SELECT version,is_dirty,synced_version FROM literature_citations WHERE source_id=?1 AND target_id=?2",
+            params![left, right]
+        ),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
+}
+
+fn update_upload_state(
+    tx: &rusqlite::Transaction<'_>,
+    entity: SyncEntityType,
+    key: &SyncEntityKey,
+    clean: bool,
+    accepted: i64,
+) -> rusqlite::Result<()> {
+    let dirty = !clean;
+    let changed = match (entity, key) {
+        (SyncEntityType::Literature, SyncEntityKey::Id(id)) => tx.execute("UPDATE literatures SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Publication, SyncEntityKey::Id(id)) => tx.execute("UPDATE publications SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Author, SyncEntityKey::Id(id)) => tx.execute("UPDATE authors SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Folder, SyncEntityKey::Id(id)) => tx.execute("UPDATE folders SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Tag, SyncEntityKey::Id(id)) => tx.execute("UPDATE tags SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Attachment, SyncEntityKey::Id(id)) => tx.execute("UPDATE attachments SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Feed, SyncEntityKey::Id(id)) => tx.execute("UPDATE feeds SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::FeedItem, SyncEntityKey::Id(id)) => tx.execute("UPDATE feed_items SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::Annotation, SyncEntityKey::Id(id)) => tx.execute("UPDATE annotations SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::LiteratureNote, SyncEntityKey::Id(id)) => tx.execute("UPDATE literature_notes SET is_dirty=?1,synced_version=?2 WHERE id=?3", params![dirty,accepted,id]),
+        (SyncEntityType::LiteratureAuthor, SyncEntityKey::Relation{left,right}) => tx.execute("UPDATE literature_authors SET is_dirty=?1,synced_version=?2 WHERE literature_id=?3 AND author_id=?4", params![dirty,accepted,left,right]),
+        (SyncEntityType::LiteratureFolder, SyncEntityKey::Relation{left,right}) => tx.execute("UPDATE literature_folders SET is_dirty=?1,synced_version=?2 WHERE literature_id=?3 AND folder_id=?4", params![dirty,accepted,left,right]),
+        (SyncEntityType::LiteratureTag, SyncEntityKey::Relation{left,right}) => tx.execute("UPDATE literature_tags SET is_dirty=?1,synced_version=?2 WHERE literature_id=?3 AND tag_id=?4", params![dirty,accepted,left,right]),
+        (SyncEntityType::Citation, SyncEntityKey::Relation{left,right}) => tx.execute("UPDATE literature_citations SET is_dirty=?1,synced_version=?2 WHERE source_id=?3 AND target_id=?4", params![dirty,accepted,left,right]),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }?;
+    if changed != 1 {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(())
 }
 
 fn payload_key(payload: &SyncEntityPayload) -> SyncEntityKey {
@@ -248,9 +394,16 @@ mod tests {
                 right: "auth".into()
             }
         );
-        assert!(
-            db.confirm_upload(SyncEntityType::LiteratureAuthor, &relation.key, 2)
-                .unwrap()
+        assert_eq!(
+            db.confirm_uploaded_snapshot(
+                SyncEntityType::LiteratureAuthor,
+                &relation.key,
+                relation.local_generation,
+                relation.expected_remote_version,
+                2
+            )
+            .unwrap(),
+            UploadConfirmation::Confirmed
         );
         assert_eq!(
             db.get_synced_version(SyncEntityType::LiteratureAuthor, &relation.key)
@@ -310,6 +463,117 @@ mod tests {
             records
                 .iter()
                 .any(|r| r.entity == SyncEntityType::LiteratureAuthor)
+        );
+    }
+
+    #[test]
+    fn confirmation_preserves_concurrent_edit_and_advances_remote_base() {
+        let db = Database::new(":memory:").unwrap();
+        let tag = db.create_tag("before", None).unwrap();
+        let snapshot = db
+            .collect_dirty_records()
+            .unwrap()
+            .into_iter()
+            .find(|record| record.entity == SyncEntityType::Tag)
+            .unwrap();
+        db.update_tag_name(&tag.id, "after").unwrap();
+        assert_eq!(
+            db.confirm_uploaded_snapshot(
+                snapshot.entity,
+                &snapshot.key,
+                snapshot.local_generation,
+                snapshot.expected_remote_version,
+                4,
+            )
+            .unwrap(),
+            UploadConfirmation::Superseded
+        );
+        assert_eq!(
+            db.get_download_state(snapshot.entity, &snapshot.key)
+                .unwrap(),
+            Some((4, true))
+        );
+        let current = db
+            .collect_dirty_records()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.key == snapshot.key)
+            .unwrap();
+        assert_eq!(
+            db.confirm_uploaded_snapshot(
+                current.entity,
+                &current.key,
+                current.local_generation,
+                4,
+                5
+            )
+            .unwrap(),
+            UploadConfirmation::Confirmed
+        );
+        assert_eq!(
+            db.get_download_state(snapshot.entity, &snapshot.key)
+                .unwrap(),
+            Some((5, false))
+        );
+    }
+
+    #[test]
+    fn confirmation_rejects_missing_stale_invalid_and_bad_remote_versions() {
+        let db = Database::new(":memory:").unwrap();
+        let tag = db.create_tag("x", None).unwrap();
+        let key = SyncEntityKey::Id(tag.id.clone());
+        assert_eq!(
+            db.confirm_uploaded_snapshot(
+                SyncEntityType::Tag,
+                &SyncEntityKey::Id("missing".into()),
+                1,
+                0,
+                1
+            )
+            .unwrap(),
+            UploadConfirmation::Missing
+        );
+        assert_eq!(
+            db.confirm_uploaded_snapshot(SyncEntityType::Tag, &key, 1, 9, 10)
+                .unwrap(),
+            UploadConfirmation::StaleBase
+        );
+        assert_eq!(
+            db.confirm_uploaded_snapshot(SyncEntityType::Tag, &key, 0, 0, 1)
+                .unwrap(),
+            UploadConfirmation::InvalidGeneration
+        );
+        assert_eq!(
+            db.confirm_uploaded_snapshot(SyncEntityType::Tag, &key, 1, 0, 0)
+                .unwrap(),
+            UploadConfirmation::InvalidGeneration
+        );
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &key).unwrap(),
+            Some((0, true))
+        );
+    }
+
+    #[test]
+    fn relation_tombstone_confirmation_preserves_newer_generation() {
+        let db = Database::new(":memory:").unwrap();
+        db.with_conn(|conn| {
+            conn.execute("INSERT INTO literature_tags (literature_id,tag_id,is_dirty,is_deleted,version,updated_at,synced_version) VALUES ('l','t',1,1,2,0,0)", [])?;
+            Ok(())
+        }).unwrap();
+        let key = SyncEntityKey::Relation {
+            left: "l".into(),
+            right: "t".into(),
+        };
+        assert_eq!(
+            db.confirm_uploaded_snapshot(SyncEntityType::LiteratureTag, &key, 1, 0, 2)
+                .unwrap(),
+            UploadConfirmation::Superseded
+        );
+        assert_eq!(
+            db.get_download_state(SyncEntityType::LiteratureTag, &key)
+                .unwrap(),
+            Some((2, true))
         );
     }
 }

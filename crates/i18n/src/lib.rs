@@ -343,6 +343,8 @@ pub enum I18nKey {
     SyncAttachments,
     FileSyncLastRun,
     FileSyncSummaryUnavailable,
+    FileSyncNeedsAttention,
+    FileSyncWaitingStatus,
     SyncSkippedBusy,
     SyncUploaded,
     SyncDownloaded,
@@ -358,6 +360,10 @@ pub enum I18nKey {
     DatabaseSyncIdentityMismatch,
     DatabaseSyncConflict,
     DatabaseSyncPartialFailure,
+    DatabaseSyncPendingLocalChanges,
+    DatabaseSyncPendingCount,
+    DatabaseSyncRemoteVersionRegression,
+    DatabaseSyncVersionRegressionsCount,
     DatabaseSyncError,
     DatabaseSyncUploaded,
     DatabaseSyncDownloaded,
@@ -394,6 +400,7 @@ pub enum I18nKey {
     ClearCloudFiles,
     PurgeSyncedDeletions,
     PurgeDeletedData,
+    PurgeDeletedDataUnsupported,
 
     // PDF Viewer
     PdfViewerSettings,

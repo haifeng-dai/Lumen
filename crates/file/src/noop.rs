@@ -63,6 +63,15 @@ impl AttachmentBackend for NoopBackend {
         })
     }
 
+    fn update_object_if_version(
+        &self,
+        _object_key: String,
+        _local_path: PathBuf,
+        _expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::UpdateObjectResult>> + Send>> {
+        Box::pin(async move { Ok(crate::backend::UpdateObjectResult::Unsupported) })
+    }
+
     fn download_object(
         &self,
         _object_key: String,
@@ -77,11 +86,9 @@ impl AttachmentBackend for NoopBackend {
     fn delete_object(
         &self,
         _object_key: String,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        Box::pin(async {
-            warn!("NoopBackend: delete_object — 未配置文件同步后端");
-            Err(anyhow!("backend disabled"))
-        })
+        _expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::DeleteObjectResult>> + Send>> {
+        Box::pin(async move { Ok(crate::backend::DeleteObjectResult::Unsupported) })
     }
 
     fn configuration_fingerprint(&self) -> Pin<Box<dyn Future<Output = Result<String>> + Send>> {

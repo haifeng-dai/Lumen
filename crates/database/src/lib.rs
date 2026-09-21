@@ -18,6 +18,6 @@ pub use sqlite::{
     Database, DatabaseSyncSummary, LocalSyncState, SyncConflict, SyncEntityKey, SyncEntityType,
     canonical_key, decode_relation_key, object_key_from_attachment_id,
 };
-pub use sync_download::{RemoteReadBatch, RemoteRecord};
+pub use sync_download::{DownloadApplyOutcome, RemoteReadBatch, RemoteRecord};
 pub use sync_merge::MergeOutcome;
-pub use sync_upload::LocalDirtyRecord;
+pub use sync_upload::{LocalDirtyRecord, UploadConfirmation};

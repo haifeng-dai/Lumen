@@ -222,6 +222,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "Sincronizar adjuntos",
         I18nKey::FileSyncLastRun => "Última sincronización de archivos",
         I18nKey::FileSyncSummaryUnavailable => "Resumen de sincronización no disponible",
+        I18nKey::FileSyncNeedsAttention => {
+            "La sincronización de archivos requiere atención: conflictos, divergencias u objetos irrecuperables"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "Sincronización de archivos en espera: confirmación de base de datos o descarga bajo demanda incompleta"
+        }
         I18nKey::SyncSkippedBusy => "Ya hay una sincronización en curso, solicitud no iniciada",
         I18nKey::SyncUploaded => "Subidos",
         I18nKey::SyncDownloaded => "Descargados",
@@ -239,6 +245,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "La identidad de la biblioteca no coincide",
         I18nKey::DatabaseSyncConflict => "Hay conflictos de sincronización",
         I18nKey::DatabaseSyncPartialFailure => "La sincronización falló parcialmente",
+        I18nKey::DatabaseSyncPendingCount => "Nuevos cambios pendientes",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "Nuevos cambios locales durante la sincronización siguen pendientes"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "Las versiones remotas están por debajo de la línea base de sincronización local (posible reversión del servidor); los datos locales no se sobrescribieron — verifique la copia de seguridad del servidor"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "Regresiones de versión",
         I18nKey::DatabaseSyncError => "Error de sincronización",
         I18nKey::DatabaseSyncUploaded => "Subidos",
         I18nKey::DatabaseSyncDownloaded => "Descargados",
@@ -421,6 +435,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Purgar datos eliminados",
         I18nKey::PurgeDeletedData => "Purgar datos eliminados (local + remoto)",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "La purga segura de datos eliminados no es compatible actualmente: faltan la marca de agua del dispositivo y el protocolo de retención; continuar rompería la sincronización incremental de dispositivos sin conexión"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "Inicializar almacenamiento remoto de archivos",

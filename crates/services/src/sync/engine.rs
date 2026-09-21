@@ -15,14 +15,14 @@ use crate::database_sync::{
 use crate::runtime::RUNTIME;
 use crate::sync::attachments::{FileLibraryPreflight, FileRoundSummary, FileSyncService};
 use crate::sync::progress::{
-    DatabaseDisposition, FileMutationPolicy, FileSyncErrorKind, FileSyncStatus,
+    DatabaseDisposition, DatabaseSyncStatus, FileMutationPolicy, FileSyncErrorKind, FileSyncStatus,
     FileSyncSummaryView, SyncStateInner,
 };
 use anyhow::Result;
 use database::sqlite::FileSyncSummary;
 use database::{Database, DatabaseSyncSummary, SyncConflict};
 use file::LocalFileManager;
-use log::{debug, info, warn};
+use log::{debug, error, info};
 use models::config::AppConfig;
 use std::{sync::Arc, time::Instant};
 use tokio::{
@@ -95,10 +95,32 @@ fn sync_error_category(error: &anyhow::Error) -> &'static str {
 
 /// 本轮整体 outcome（overall 阶段）：Error 视为失败，PartialFailure 单列；
 /// 身份阻断/禁用状态单列，绝不记为 complete。
+/// STATE-002: 持久化文件冲突存在时，不得回到 Complete/Waiting。
+fn apply_persistent_file_conflict_overlay(
+    status: FileSyncStatus,
+    persistent_conflicts: usize,
+) -> FileSyncStatus {
+    if persistent_conflicts == 0 {
+        return status;
+    }
+    match status {
+        FileSyncStatus::WaitingForDatabaseIdentity
+        | FileSyncStatus::InitializationRequired
+        | FileSyncStatus::IdentityMismatch
+        | FileSyncStatus::UnidentifiedRemote
+        | FileSyncStatus::Disabled
+        | FileSyncStatus::Error(FileSyncErrorKind::SummaryPersistFailed)
+        | FileSyncStatus::Error(FileSyncErrorKind::PreflightFailed) => status,
+        _ => FileSyncStatus::NeedsAttention,
+    }
+}
+
 fn overall_outcome(status: &FileSyncStatus) -> &'static str {
     match status {
         FileSyncStatus::Complete => "complete",
         FileSyncStatus::PartialFailure => "partial_failure",
+        FileSyncStatus::NeedsAttention => "needs_attention",
+        FileSyncStatus::Waiting => "waiting",
         FileSyncStatus::Error(_) => "failed",
         FileSyncStatus::Disabled => "disabled",
         FileSyncStatus::WaitingForDatabaseIdentity => "waiting_database_identity",
@@ -111,22 +133,31 @@ fn overall_outcome(status: &FileSyncStatus) -> &'static str {
 }
 
 fn database_sync_result_fields(result: &DatabaseSyncRunResult) -> String {
-    let (downloaded, download_conflicts) = match result.download.as_ref() {
-        Some(DownloadResult::Applied { records, conflicts }) => (*records, *conflicts),
-        _ => (0, 0),
+    let (downloaded, download_conflicts, regressions) = match result.download.as_ref() {
+        Some(DownloadResult::Applied {
+            records,
+            conflicts,
+            version_regressions,
+        }) => (*records, *conflicts, *version_regressions),
+        _ => (0, 0, 0),
     };
     let (uploaded, upload_conflicts) = result
         .upload
         .as_ref()
         .map(|value| (value.uploaded, value.conflicts))
         .unwrap_or_default();
-    let outcome = if result.failures == 0 {
+    let superseded = result
+        .upload
+        .as_ref()
+        .map(|value| value.superseded)
+        .unwrap_or(0);
+    let outcome = if result.failures == 0 && superseded == 0 && regressions == 0 {
         "complete"
     } else {
         "partial_failure"
     };
     format!(
-        "outcome={outcome} downloaded={downloaded} uploaded={uploaded} conflicts={} failures={}",
+        "outcome={outcome} downloaded={downloaded} uploaded={uploaded} superseded={superseded} conflicts={} failures={} version_regressions={regressions}",
         download_conflicts + upload_conflicts,
         result.failures
     )
@@ -273,6 +304,11 @@ impl SyncService {
         });
     }
 
+    /// OPS-001: 同步协调锁是否被占用（危险维护操作前置检查）。
+    pub fn is_sync_running(&self) -> bool {
+        self.coordinator_lock.try_lock().is_err()
+    }
+
     pub fn start_auto_sync_loop(self: Arc<Self>, mut receiver: mpsc::Receiver<()>) {
         let manager = self.clone();
         RUNTIME.spawn(async move {
@@ -356,26 +392,31 @@ impl SyncService {
 
         // 1. 数据库阶段（仅 Full）：保留类型化结果，不得压缩为 failures==0
         let disposition = if mode == SyncMode::Full {
-            run_log.event("database", "start", "");
-            match self.database_sync.run_with_context(&run_id).await {
-                Ok(result) => {
-                    run_log.event(
-                        "database",
-                        "complete",
-                        &database_sync_result_fields(&result),
-                    );
-                    Self::disposition_from_db_result(&result)
-                }
-                Err(error) => {
-                    run_log.event(
-                        "database",
-                        "failed",
-                        &format!(
-                            "operation=database_sync outcome=failed_before_transfer error_category={}",
-                            sync_error_category(&error)
-                        ),
-                    );
-                    DatabaseDisposition::Error
+            if !self.database_sync.remote_database_enabled() {
+                run_log.event("database", "skipped", "reason=remote_database_disabled");
+                DatabaseDisposition::Disabled
+            } else {
+                run_log.event("database", "start", "");
+                match self.database_sync.run_with_context(&run_id).await {
+                    Ok(result) => {
+                        run_log.event(
+                            "database",
+                            "complete",
+                            &database_sync_result_fields(&result),
+                        );
+                        Self::disposition_from_db_result(&result)
+                    }
+                    Err(error) => {
+                        run_log.event(
+                            "database",
+                            "failed",
+                            &format!(
+                                "operation=database_sync outcome=failed_before_transfer error_category={}",
+                                sync_error_category(&error)
+                            ),
+                        );
+                        DatabaseDisposition::Error
+                    }
                 }
             }
         } else {
@@ -452,7 +493,13 @@ impl SyncService {
         run_log: &SyncRunLog,
         round: &FileRoundSummary,
     ) -> FileSyncStatus {
-        let (status, reason) = Self::file_status_from_round(round);
+        let (mut status, mut reason) = Self::file_status_from_round(round);
+        // STATE-002: 终态叠加持久化文件冲突真源
+        let persistent_file_conflicts = self.count_persistent_file_conflicts(round);
+        status = apply_persistent_file_conflict_overlay(status, persistent_file_conflicts);
+        if persistent_file_conflicts > 0 && status == FileSyncStatus::NeedsAttention {
+            reason = Some("needs_attention".to_string());
+        }
         let status = match self.persist_file_sync_summary(
             &run_log.run_id,
             round,
@@ -478,49 +525,161 @@ impl SyncService {
         // 写文件终态（不覆盖数据库状态；数据库状态由 database_sync 服务维护）
         if let Ok(mut st) = self.sync_state.lock() {
             st.file_sync_status = status.clone();
+            st.refresh_composite(
+                self.db.list_sync_conflicts().map(|v| v.len()).unwrap_or(0),
+                self.db.count_attachment_file_conflicts().unwrap_or(0),
+                round.waiting + round.pending_download,
+                round.unrecoverable_missing,
+                round.failed,
+            );
         }
         (self.notify_data)();
         (self.notify_ui)();
         status
     }
 
-    /// 由数据库同步结果推导类型化 disposition（区分成功与部分失败，禁止仅看 failures==0）。
-    fn disposition_from_db_result(result: &DatabaseSyncRunResult) -> DatabaseDisposition {
-        if result.failures == 0 {
-            DatabaseDisposition::CompleteReady
-        } else {
-            DatabaseDisposition::PartialFailure
+    fn count_persistent_file_conflicts(&self, round: &FileRoundSummary) -> usize {
+        match &round.preflight {
+            FileLibraryPreflight::Ready {
+                file_library_id, ..
+            } => self
+                .db
+                .list_file_conflicts(file_library_id)
+                .map(|v| v.len())
+                .unwrap_or(0),
+            _ => self.db.count_attachment_file_conflicts().unwrap_or(0),
         }
+    }
+
+    /// STATE-002: 启动时从持久化文件冲突恢复 NeedsAttention。
+    pub fn restore_file_status_from_persistent_conflicts(&self) -> Result<FileSyncStatus> {
+        let persistent = self.db.count_attachment_file_conflicts().unwrap_or(0);
+        let base = match self.file_sync_summary() {
+            Ok(Some(view)) => view.state,
+            _ => FileSyncStatus::Idle,
+        };
+        let status = apply_persistent_file_conflict_overlay(base, persistent);
+        if let Ok(mut st) = self.sync_state.lock() {
+            st.file_sync_status = status.clone();
+        }
+        Ok(status)
+    }
+
+    /// COORD-001: 数据库同步结果 → 类型化 disposition。
+    /// 优先级：failures > identity 阻断 > 版本回退 > 冲突（保守禁删） > superseded > CompleteReady。
+    fn disposition_from_db_result(result: &DatabaseSyncRunResult) -> DatabaseDisposition {
+        // 阶段错误优先
+        if result.failures > 0 {
+            // identity 结果若已类型化，优先呈现身份阻断（可操作）
+            if let Some(identity) = result.identity.as_ref() {
+                match identity {
+                    IdentityDecision::NeedsRemoteInitialization => {
+                        return DatabaseDisposition::InitializationRequired;
+                    }
+                    IdentityDecision::NeedsRemoteAdoption { .. } => {
+                        return DatabaseDisposition::AdoptionRequired;
+                    }
+                    IdentityDecision::Mismatch { .. } => {
+                        return DatabaseDisposition::IdentityMismatch;
+                    }
+                    IdentityDecision::Ready { .. } => {}
+                }
+            }
+            if matches!(result.download, Some(DownloadResult::IdentityRequired)) {
+                return DatabaseDisposition::InitializationRequired;
+            }
+            if matches!(result.download, Some(DownloadResult::IdentityMismatch)) {
+                return DatabaseDisposition::IdentityMismatch;
+            }
+            return DatabaseDisposition::PartialFailure;
+        }
+
+        match result.identity.as_ref() {
+            Some(IdentityDecision::NeedsRemoteInitialization) => {
+                return DatabaseDisposition::InitializationRequired;
+            }
+            Some(IdentityDecision::NeedsRemoteAdoption { .. }) => {
+                return DatabaseDisposition::AdoptionRequired;
+            }
+            Some(IdentityDecision::Mismatch { .. }) => {
+                return DatabaseDisposition::IdentityMismatch;
+            }
+            _ => {}
+        }
+        match result.download.as_ref() {
+            Some(DownloadResult::IdentityRequired) => {
+                return DatabaseDisposition::InitializationRequired;
+            }
+            Some(DownloadResult::IdentityMismatch) => {
+                return DatabaseDisposition::IdentityMismatch;
+            }
+            _ => {}
+        }
+
+        if result.download.as_ref().is_some_and(
+            |d| matches!(d, DownloadResult::Applied { version_regressions, .. } if *version_regressions > 0),
+        ) {
+            return DatabaseDisposition::RemoteVersionRegression;
+        }
+
+        let download_conflicts = result.download.as_ref().is_some_and(
+            |d| matches!(d, DownloadResult::Applied { conflicts, .. } if *conflicts > 0),
+        );
+        let upload_conflicts = result.upload.as_ref().is_some_and(|u| u.conflicts > 0);
+        if download_conflicts || upload_conflicts {
+            // 未解决冲突时禁止远端删除（COORD-001 保守矩阵）
+            return DatabaseDisposition::PartialFailure;
+        }
+
+        if result
+            .upload
+            .as_ref()
+            .is_some_and(|value| value.superseded > 0)
+        {
+            return DatabaseDisposition::PendingLocalChanges;
+        }
+
+        DatabaseDisposition::CompleteReady
     }
 
     /// 由文件轮次结果推导类型化文件状态，返回 (状态, 脱敏原因)。
     ///
-    /// preflight 非 Ready 直接映射身份/禁用状态；Ready 时按计数判定 Complete/PartialFailure/Error。
+    /// STATE-001: Complete 仅当所有异常/等待计数为 0。
+    /// 冲突/未知分歧/无法恢复 → NeedsAttention（可与失败并存）；
+    /// 失败 → PartialFailure/Error；仅等待 → Waiting。
     fn file_status_from_round(summary: &FileRoundSummary) -> (FileSyncStatus, Option<String>) {
         match &summary.preflight {
             FileLibraryPreflight::Ready { .. } => {
-                if summary.failed == 0 {
-                    (FileSyncStatus::Complete, None)
-                } else if summary.uploaded
+                let attention =
+                    summary.conflicts + summary.unknown_divergence + summary.unrecoverable_missing;
+                let progress = summary.uploaded
                     + summary.downloaded
                     + summary.deleted
                     + summary.skipped
                     + summary.waiting
-                    + summary.conflicts
-                    + summary.unknown_divergence
-                    + summary.pending_download
-                    + summary.unrecoverable_missing
-                    > 0
-                {
+                    + summary.pending_download;
+                if attention > 0 {
+                    // 冲突/未知/无法恢复优先呈现给用户，失败计数保留在摘要中
                     (
-                        FileSyncStatus::PartialFailure,
-                        Some("partial_failure".to_string()),
+                        FileSyncStatus::NeedsAttention,
+                        Some("needs_attention".to_string()),
                     )
+                } else if summary.failed > 0 {
+                    if progress > 0 {
+                        (
+                            FileSyncStatus::PartialFailure,
+                            Some("partial_failure".to_string()),
+                        )
+                    } else {
+                        (
+                            FileSyncStatus::Error(FileSyncErrorKind::TransferFailed),
+                            Some("transfer_failed".to_string()),
+                        )
+                    }
+                } else if summary.waiting > 0 || summary.pending_download > 0 {
+                    (FileSyncStatus::Waiting, Some("waiting".to_string()))
                 } else {
-                    (
-                        FileSyncStatus::Error(FileSyncErrorKind::TransferFailed),
-                        Some("transfer_failed".to_string()),
-                    )
+                    (FileSyncStatus::Complete, None)
                 }
             }
             other => (FileSyncStatus::from_preflight(other), None),
@@ -607,6 +766,33 @@ impl SyncService {
         self.database_sync.list_conflicts()
     }
 
+    /// UI-002: 列出全部未解决文件冲突（跨 file library）。
+    pub fn list_all_file_conflicts(&self) -> Result<Vec<database::sqlite::AttachmentFileConflict>> {
+        self.db.list_all_file_conflicts().map_err(Into::into)
+    }
+
+    /// UI-002: 用户确认已处理后移除一条文件冲突记录。
+    pub fn dismiss_file_conflict(
+        &self,
+        attachment_id: &str,
+        file_library_id: &str,
+        object_key: &str,
+        reason: &str,
+    ) -> Result<()> {
+        let _ = object_key;
+        self.db
+            .delete_file_conflict(attachment_id, file_library_id, reason)?;
+        (self.notify_data)();
+        (self.notify_ui)();
+        Ok(())
+    }
+
+    /// STATE-002: 启动/恢复时从持久化数据库冲突重算数据库同步状态。
+    pub fn restore_status_from_persistent_conflicts(&self) -> Result<DatabaseSyncStatus> {
+        self.database_sync
+            .restore_status_from_persistent_conflicts()
+    }
+
     pub fn choose_remote_database_conflict(
         &self,
         entity_type: &str,
@@ -637,19 +823,23 @@ impl SyncService {
         self.file_sync.clear_remote_files().await
     }
 
+    /// DB-003: block combined remote+local tombstone physical purge.
+    /// Must not run local `purge_all_deleted` after the remote step is blocked.
     pub async fn purge_deleted_data(&self) -> Result<usize> {
-        let remote_rows = self.database_sync.purge_deleted_data().await?;
-        let (local_rows, attachment_paths) = self.db.purge_all_deleted()?;
-        for path in attachment_paths {
-            if let Err(e) = self.file_manager.trash_file(&path) {
-                warn!("存储管理: [Purge] 删除本地附件失败 '{}': {e}", path);
+        match self.database_sync.purge_deleted_data().await {
+            Err(error) => {
+                error!("存储管理: [Purge] 已阻断不安全的 tombstone 物理清理: {error}");
+                Err(error)
+            }
+            Ok(count) => {
+                // Defense in depth: never allow a successful remote purge to
+                // fall through into local physical deletion in this call.
+                error!("存储管理: [Purge] 远端清理意外成功，拒绝继续本地清理 count={count}");
+                Err(anyhow::anyhow!(
+                    "remote tombstone purge is currently unsupported"
+                ))
             }
         }
-        info!(
-            "存储管理: [Purge] 清理完成，远端记录 {} 条，本地记录 {} 条",
-            remote_rows, local_rows
-        );
-        Ok(remote_rows + local_rows)
     }
 
     pub async fn file_library_preflight(&self) -> crate::sync::attachments::FileLibraryPreflight {
@@ -690,14 +880,15 @@ impl SyncService {
 #[cfg(test)]
 mod tests {
     use super::{
-        SyncRunLog, SyncRunOutcome, SyncService, database_sync_result_fields, overall_outcome,
+        SyncRunLog, SyncRunOutcome, SyncService, apply_persistent_file_conflict_overlay,
+        database_sync_result_fields, overall_outcome,
     };
     use crate::database_sync::{
-        DatabaseSyncRunResult, DatabaseSyncService, DownloadResult, UploadResult,
+        DatabaseSyncRunResult, DatabaseSyncService, DownloadResult, IdentityDecision, UploadResult,
     };
     use crate::sync::attachments::{FileLibraryPreflight, FileRoundSummary, FileSyncService};
     use crate::sync::progress::{
-        DatabaseDisposition, FileSyncErrorKind, FileSyncStatus, SyncStateInner,
+        DatabaseDisposition, FileMutationPolicy, FileSyncErrorKind, FileSyncStatus, SyncStateInner,
     };
     use database::Database;
     use database::sqlite::FileSyncSummary;
@@ -743,6 +934,9 @@ mod tests {
             SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
                 download: None,
                 upload: None,
+                identity: Some(IdentityDecision::Ready {
+                    full_snapshot_required: false
+                }),
                 failures: 0,
                 ..Default::default()
             }),
@@ -752,16 +946,87 @@ mod tests {
             SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
                 download: None,
                 upload: None,
+                identity: Some(IdentityDecision::Ready {
+                    full_snapshot_required: false
+                }),
                 failures: 2,
                 ..Default::default()
             }),
             DatabaseDisposition::PartialFailure
         );
+        // COORD-001: identity 阻断
+        assert_eq!(
+            SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::NeedsRemoteInitialization),
+                failures: 1,
+                ..Default::default()
+            }),
+            DatabaseDisposition::InitializationRequired
+        );
+        assert_eq!(
+            SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::NeedsRemoteAdoption {
+                    library_id: "r".into()
+                }),
+                ..Default::default()
+            }),
+            DatabaseDisposition::AdoptionRequired
+        );
+        assert_eq!(
+            SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::Mismatch {
+                    local_id: "a".into(),
+                    remote_id: "b".into()
+                }),
+                ..Default::default()
+            }),
+            DatabaseDisposition::IdentityMismatch
+        );
+        // 冲突 → 保守 PartialFailure（禁删）
+        assert_eq!(
+            SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::Ready {
+                    full_snapshot_required: false
+                }),
+                download: Some(DownloadResult::Applied {
+                    records: 0,
+                    conflicts: 2,
+                    version_regressions: 0,
+                }),
+                ..Default::default()
+            }),
+            DatabaseDisposition::PartialFailure
+        );
+        // 回退
+        assert_eq!(
+            SyncService::disposition_from_db_result(&DatabaseSyncRunResult {
+                identity: Some(IdentityDecision::Ready {
+                    full_snapshot_required: false
+                }),
+                download: Some(DownloadResult::Applied {
+                    records: 0,
+                    conflicts: 0,
+                    version_regressions: 1,
+                }),
+                ..Default::default()
+            }),
+            DatabaseDisposition::RemoteVersionRegression
+        );
+        // 策略矩阵
+        assert!(DatabaseDisposition::CompleteReady.allows_remote_delete());
+        assert!(!DatabaseDisposition::PartialFailure.allows_remote_delete());
+        assert!(DatabaseDisposition::PartialFailure.allows_confirmed_file_upload());
+        assert!(!DatabaseDisposition::IdentityMismatch.allows_confirmed_file_upload());
+        assert!(!DatabaseDisposition::Disabled.allows_confirmed_file_upload());
+        assert!(!DatabaseDisposition::Disabled.allows_file_recovery());
+        let policy = FileMutationPolicy::from_disposition(DatabaseDisposition::PendingLocalChanges);
+        assert!(policy.allow_confirmed_upload);
+        assert!(!policy.allow_confirmed_delete);
     }
 
     #[test]
     fn file_status_from_round_maps_counts_to_typed_status() {
-        // Ready + 无失败 → Complete
+        // Ready + 无任何异常/等待 → Complete
         assert_eq!(
             SyncService::file_status_from_round(&ready_round(0, 1, 0, 0, 0, 0, 0, 0, 0, 0)).0,
             FileSyncStatus::Complete
@@ -777,6 +1042,60 @@ mod tests {
         assert_eq!(
             SyncService::file_status_from_round(&ready_round(1, 0, 0, 0, 0, 0, 0, 0, 0, 0)).0,
             FileSyncStatus::Error(crate::sync::progress::FileSyncErrorKind::TransferFailed)
+        );
+
+        // STATE-001: failed=0 但有冲突 → NeedsAttention，绝不 Complete
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 1, 0, 0, 0, 0, 1, 0, 0, 0)).0,
+            FileSyncStatus::NeedsAttention
+        );
+        // unknown_divergence
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 0, 0, 0, 1, 0, 0, 1, 0, 0)).0,
+            FileSyncStatus::NeedsAttention
+        );
+        // unrecoverable_missing
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).0,
+            FileSyncStatus::NeedsAttention
+        );
+        // 冲突与失败并存 → NeedsAttention（冲突不被失败吞掉）
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(2, 1, 0, 0, 0, 0, 3, 0, 0, 0)).0,
+            FileSyncStatus::NeedsAttention
+        );
+        // 仅等待数据库确认 → Waiting
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 0, 0, 0, 0, 2, 0, 0, 0, 0)).0,
+            FileSyncStatus::Waiting
+        );
+        // 仅按需下载 pending → Waiting
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 0, 0, 0, 0, 0, 0, 0, 1, 0)).0,
+            FileSyncStatus::Waiting
+        );
+        // skipped-only 无异常 → Complete
+        assert_eq!(
+            SyncService::file_status_from_round(&ready_round(0, 0, 0, 0, 5, 0, 0, 0, 0, 0)).0,
+            FileSyncStatus::Complete
+        );
+
+        // STATE-002: 本轮 Complete 但存在持久化文件冲突 → NeedsAttention
+        assert_eq!(
+            apply_persistent_file_conflict_overlay(FileSyncStatus::Complete, 2),
+            FileSyncStatus::NeedsAttention
+        );
+        assert_eq!(
+            apply_persistent_file_conflict_overlay(FileSyncStatus::Waiting, 1),
+            FileSyncStatus::NeedsAttention
+        );
+        assert_eq!(
+            apply_persistent_file_conflict_overlay(FileSyncStatus::Complete, 0),
+            FileSyncStatus::Complete
+        );
+        assert_eq!(
+            apply_persistent_file_conflict_overlay(FileSyncStatus::IdentityMismatch, 5),
+            FileSyncStatus::IdentityMismatch
         );
 
         // preflight 非 Ready → 直接映射身份/禁用状态，不覆盖为 Complete
@@ -800,6 +1119,60 @@ mod tests {
     }
 
     #[test]
+    fn state_002_file_restore_from_persistent_conflicts() {
+        let dir =
+            std::env::temp_dir().join(format!("lumen-state002-file-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::new(":memory:").unwrap());
+        let att_id = "00000000-0000-0000-0000-000000000001";
+        db.upsert_file_conflict(&database::sqlite::AttachmentFileConflict {
+            attachment_id: att_id.into(),
+            file_library_id: "flib-1".into(),
+            object_key: format!("objects/v1/{att_id}"),
+            remote_version: "v1".into(),
+            local_sha256: "h".into(),
+            reason: "file_conflict".into(),
+            created_at: 1,
+        })
+        .unwrap();
+        let file_manager = LocalFileManager::new(&dir).unwrap();
+        let notify_ui: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let notify_data: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let file_sync = FileSyncService::new(
+            db.clone(),
+            file_manager.clone(),
+            Box::new(file::noop::NoopBackend),
+            notify_ui.clone(),
+        );
+        let sync_state = Arc::new(std::sync::Mutex::new(SyncStateInner::new()));
+        let database_sync = DatabaseSyncService::new(db.clone());
+        let (sync_trigger, _rx) = tokio::sync::mpsc::channel(1);
+        let service = SyncService {
+            db: db.clone(),
+            file_manager,
+            file_sync: Arc::new(file_sync),
+            database_sync: Arc::new(database_sync),
+            auto_sync_paused: Arc::new(tokio::sync::Mutex::new(false)),
+            sync_trigger,
+            coordinator_lock: Arc::new(tokio::sync::Mutex::new(())),
+            sync_state: sync_state.clone(),
+            notify_ui,
+            notify_data,
+            #[cfg(test)]
+            summary_persist_override: None,
+        };
+        let restored = service
+            .restore_file_status_from_persistent_conflicts()
+            .unwrap();
+        assert_eq!(restored, FileSyncStatus::NeedsAttention);
+        assert_eq!(
+            sync_state.lock().unwrap().file_sync_status,
+            FileSyncStatus::NeedsAttention
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn run_log_uses_a_short_id_shared_by_all_events() {
         let log = SyncRunLog::new();
         assert_eq!(log.run_id.len(), 8);
@@ -813,6 +1186,7 @@ mod tests {
             download: Some(DownloadResult::Applied {
                 records: 3,
                 conflicts: 1,
+                version_regressions: 0,
             }),
             upload: Some(UploadResult {
                 uploaded: 2,
@@ -828,6 +1202,24 @@ mod tests {
         assert!(fields.contains("uploaded=2"));
         assert!(fields.contains("conflicts=2"));
         assert!(fields.contains("failures=1"));
+    }
+
+    #[test]
+    fn pending_upload_is_logged_and_not_complete_or_deletable() {
+        let result = DatabaseSyncRunResult {
+            upload: Some(UploadResult {
+                superseded: 2,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let fields = database_sync_result_fields(&result);
+        assert!(fields.contains("outcome=partial_failure") && fields.contains("superseded=2"));
+        assert_eq!(
+            SyncService::disposition_from_db_result(&result),
+            DatabaseDisposition::PendingLocalChanges
+        );
+        assert!(!DatabaseDisposition::PendingLocalChanges.allows_remote_delete());
     }
 
     // ---------- 测试构造辅助 ----------
@@ -1089,6 +1481,11 @@ mod tests {
             overall_outcome(&FileSyncStatus::PartialFailure),
             "partial_failure"
         );
+        assert_eq!(
+            overall_outcome(&FileSyncStatus::NeedsAttention),
+            "needs_attention"
+        );
+        assert_eq!(overall_outcome(&FileSyncStatus::Waiting), "waiting");
         assert_eq!(
             overall_outcome(&FileSyncStatus::Error(FileSyncErrorKind::TransferFailed)),
             "failed"

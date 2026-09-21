@@ -71,6 +71,12 @@ impl Render for LiteraturePanel {
             DatabaseSyncStatus::IdentityMismatch => Some(I18nKey::DatabaseSyncIdentityMismatch),
             DatabaseSyncStatus::Conflict => Some(I18nKey::DatabaseSyncConflict),
             DatabaseSyncStatus::PartialFailure => Some(I18nKey::DatabaseSyncPartialFailure),
+            DatabaseSyncStatus::PendingLocalChanges => {
+                Some(I18nKey::DatabaseSyncPendingLocalChanges)
+            }
+            DatabaseSyncStatus::RemoteVersionRegression => {
+                Some(I18nKey::DatabaseSyncRemoteVersionRegression)
+            }
             DatabaseSyncStatus::Error(_) => Some(I18nKey::DatabaseSyncError),
         };
 
@@ -829,9 +835,13 @@ impl Render for LiteraturePanel {
                             | DatabaseSyncStatus::NeedsRemoteAdoption
                             | DatabaseSyncStatus::IdentityMismatch
                             | DatabaseSyncStatus::Conflict
-                            | DatabaseSyncStatus::PartialFailure => Icon::new(IconName::TriangleAlert)
-                                .small()
-                                .text_color(theme.warning),
+                            | DatabaseSyncStatus::PartialFailure
+                            | DatabaseSyncStatus::PendingLocalChanges
+                            | DatabaseSyncStatus::RemoteVersionRegression => {
+                                Icon::new(IconName::TriangleAlert)
+                                    .small()
+                                    .text_color(theme.warning)
+                            }
                             DatabaseSyncStatus::Error(_) => {
                                 Icon::new(IconName::CircleX).small().text_color(theme.red_light)
                             }
@@ -872,16 +882,51 @@ impl Render for LiteraturePanel {
                                 FileSyncStatus::Syncing => Icon::new(IconName::LoaderCircle)
                                     .small()
                                     .text_color(theme.primary),
-                                FileSyncStatus::Error(_) => Icon::new(IconName::TriangleAlert)
+                                FileSyncStatus::Error(_)
+                                | FileSyncStatus::NeedsAttention
+                                | FileSyncStatus::PartialFailure => {
+                                    Icon::new(IconName::TriangleAlert)
+                                        .small()
+                                        .text_color(theme.red_light)
+                                }
+                                FileSyncStatus::Waiting => Icon::new(IconName::TriangleAlert)
                                     .small()
-                                    .text_color(theme.red_light),
+                                    .text_color(theme.warning),
                                 _ => Icon::new(IconName::Cloud).small().text_color(theme.muted_foreground),
+                            })
+                            .child({
+                                // OBS-001: 持久冲突计数 badge
+                                let flags = self.app.sync_composite_flags();
+                                if flags.file_conflict_count > 0 || flags.unrecoverable_count > 0 {
+                                    div()
+                                        .ml(px(-4.))
+                                        .text_xs()
+                                        .text_color(theme.red_light)
+                                        .child(SharedString::from(format!(
+                                            "{}",
+                                            flags.file_conflict_count + flags.unrecoverable_count
+                                        )))
+                                } else {
+                                    div().hidden()
+                                }
                             })
                             .ghost()
                             .xsmall()
                             .when_some(file_sync_tooltip, |this, tip| this.tooltip(tip))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if let FileSyncStatus::Syncing = file_status {
+                                    return;
+                                }
+
+                                // OBS-001 / UI-002: 存在文件冲突时优先打开冲突列表
+                                let composite = this.app.sync_composite_flags();
+                                if composite.file_conflict_count > 0 {
+                                    let parent = this.parent_view.clone();
+                                    if let Some(parent) = parent.upgrade() {
+                                        parent.update(cx, |window, cx| {
+                                            window.open_file_sync_conflicts(cx);
+                                        });
+                                    }
                                     return;
                                 }
 
@@ -931,12 +976,17 @@ impl Render for LiteraturePanel {
 /// + 扩展计数（仅非零时出现）。纯函数，便于测试。
 fn format_file_sync_summary(view: &FileSyncSummaryView, lang: i18n::Language) -> String {
     use chrono::TimeZone;
+    let headline = match view.state {
+        FileSyncStatus::NeedsAttention => t(I18nKey::FileSyncNeedsAttention, lang).to_string(),
+        FileSyncStatus::Waiting => t(I18nKey::FileSyncWaitingStatus, lang).to_string(),
+        _ => t(I18nKey::FileSyncLastRun, lang).to_string(),
+    };
     let time = chrono::Local
         .timestamp_opt(view.updated_at, 0)
         .single()
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "--".to_string());
-    let mut parts = vec![format!("{} {}", t(I18nKey::FileSyncLastRun, lang), time)];
+    let mut parts = vec![format!("{headline} {time}")];
     for (key, value) in [
         (I18nKey::SyncUploaded, view.uploaded),
         (I18nKey::SyncDownloaded, view.downloaded),

@@ -12,9 +12,8 @@ use gpui_component::{
     v_flex,
 };
 use i18n::{I18nKey, t};
-use log::{error, info};
+use log::error;
 use services::app::MainApp;
-use services::runtime::RUNTIME;
 use std::sync::Arc;
 
 use super::{
@@ -643,10 +642,33 @@ impl SettingsWindow {
                                     .text_color(cx.theme().danger)
                                     .on_click({
                                         let app = app.clone();
-                                        move |_, _, _cx| {
-                                            if let Err(e) = app.clear_local_database() {
-                                                error!("清空本地数据库失败: {e}");
+                                        move |_, _, cx| match app.begin_dangerous_op("clear_local_db") {
+                                            Ok(false) => show_notification(
+                                                NotificationType::Warning,
+                                                "危险操作：请在 30 秒内再次点击以确认清空本地数据库",
+                                                cx,
+                                            ),
+                                            Ok(true) => {
+                                                if let Err(e) = app.clear_local_database() {
+                                                    error!("清空本地数据库失败: {e}");
+                                                    show_notification(
+                                                        NotificationType::Error,
+                                                        format!("清空本地数据库失败: {e}"),
+                                                        cx,
+                                                    );
+                                                } else {
+                                                    show_notification(
+                                                        NotificationType::Success,
+                                                        "本地数据库已清空",
+                                                        cx,
+                                                    );
+                                                }
                                             }
+                                            Err(e) => show_notification(
+                                                NotificationType::Error,
+                                                e.to_string(),
+                                                cx,
+                                            ),
                                         }
                                     }),
                             )
@@ -657,10 +679,34 @@ impl SettingsWindow {
                                     .text_color(cx.theme().danger)
                                     .on_click({
                                         let app = app.clone();
-                                        move |_, _, _cx| {
-                                            if let Err(e) = app.file_manager.trash_all() {
-                                                error!("清空本地文件失败: {e}");
+                                        move |_, _, cx| match app.begin_dangerous_op("clear_local_files")
+                                        {
+                                            Ok(false) => show_notification(
+                                                NotificationType::Warning,
+                                                "危险操作：请在 30 秒内再次点击以确认清空本地文件",
+                                                cx,
+                                            ),
+                                            Ok(true) => {
+                                                if let Err(e) = app.file_manager.trash_all() {
+                                                    error!("清空本地文件失败: {e}");
+                                                    show_notification(
+                                                        NotificationType::Error,
+                                                        format!("清空本地文件失败: {e}"),
+                                                        cx,
+                                                    );
+                                                } else {
+                                                    show_notification(
+                                                        NotificationType::Success,
+                                                        "本地文件已移入回收站",
+                                                        cx,
+                                                    );
+                                                }
                                             }
+                                            Err(e) => show_notification(
+                                                NotificationType::Error,
+                                                e.to_string(),
+                                                cx,
+                                            ),
                                         }
                                     }),
                             )
@@ -706,14 +752,31 @@ impl SettingsWindow {
                                     .text_color(cx.theme().danger)
                                     .on_click({
                                         let app = app.clone();
-                                        move |_, _, cx| {
-                                            let app = app.clone();
-                                            cx.spawn(move |_: &mut AsyncApp| async move {
-                                                if let Err(e) = app.clear_remote_database().await {
-                                                    error!("清空云端数据库失败: {e}");
-                                                }
-                                            })
-                                            .detach();
+                                        move |_, _, cx| match app.begin_dangerous_op("clear_cloud_db") {
+                                            Ok(false) => show_notification(
+                                                NotificationType::Warning,
+                                                "危险操作：请在 30 秒内再次点击以确认清空云端数据库",
+                                                cx,
+                                            ),
+                                            Ok(true) => {
+                                                let app = app.clone();
+                                                cx.spawn(move |_: &mut AsyncApp| async move {
+                                                    if let Err(e) = app.clear_remote_database().await {
+                                                        error!("清空云端数据库失败: {e}");
+                                                    }
+                                                })
+                                                .detach();
+                                                show_notification(
+                                                    NotificationType::Warning,
+                                                    "已开始清空云端数据库，请查看日志结果",
+                                                    cx,
+                                                );
+                                            }
+                                            Err(e) => show_notification(
+                                                NotificationType::Error,
+                                                e.to_string(),
+                                                cx,
+                                            ),
                                         }
                                     }),
                             )
@@ -724,14 +787,32 @@ impl SettingsWindow {
                                     .text_color(cx.theme().danger)
                                     .on_click({
                                         let app = app.clone();
-                                        move |_, _, cx| {
-                                            let app = app.clone();
-                                            cx.spawn(move |_: &mut AsyncApp| async move {
-                                                if let Err(e) = app.clear_remote_files().await {
-                                                    error!("清空云端文件失败: {e}");
-                                                }
-                                            })
-                                            .detach();
+                                        move |_, _, cx| match app.begin_dangerous_op("clear_cloud_files")
+                                        {
+                                            Ok(false) => show_notification(
+                                                NotificationType::Warning,
+                                                "危险操作：请在 30 秒内再次点击以确认清空云端文件",
+                                                cx,
+                                            ),
+                                            Ok(true) => {
+                                                let app = app.clone();
+                                                cx.spawn(move |_: &mut AsyncApp| async move {
+                                                    if let Err(e) = app.clear_remote_files().await {
+                                                        error!("清空云端文件失败: {e}");
+                                                    }
+                                                })
+                                                .detach();
+                                                show_notification(
+                                                    NotificationType::Warning,
+                                                    "已开始清空云端文件，请查看日志结果",
+                                                    cx,
+                                                );
+                                            }
+                                            Err(e) => show_notification(
+                                                NotificationType::Error,
+                                                e.to_string(),
+                                                cx,
+                                            ),
                                         }
                                     }),
                             )
@@ -742,9 +823,29 @@ impl SettingsWindow {
                                     .text_color(cx.theme().danger)
                                     .on_click({
                                         let app = app.clone();
-                                        move |_, _, _cx| match app.purge_synced_deletions() {
-                                            Ok(n) => info!("清理已删除数据完成，共 {n} 条"),
-                                            Err(e) => error!("清理已删除数据失败: {e}"),
+                                        move |_, _, cx| match app.begin_dangerous_op("purge_synced") {
+                                            Ok(false) => show_notification(
+                                                NotificationType::Warning,
+                                                "危险操作：请在 30 秒内再次点击以确认清理已同步删除数据",
+                                                cx,
+                                            ),
+                                            Ok(true) => match app.purge_synced_deletions() {
+                                                Ok(n) => show_notification(
+                                                    NotificationType::Success,
+                                                    format!("清理已删除数据完成，共 {n} 条"),
+                                                    cx,
+                                                ),
+                                                Err(e) => show_notification(
+                                                    NotificationType::Error,
+                                                    format!("清理已删除数据失败: {e}"),
+                                                    cx,
+                                                ),
+                                            },
+                                            Err(e) => show_notification(
+                                                NotificationType::Error,
+                                                e.to_string(),
+                                                cx,
+                                            ),
                                         }
                                     }),
                             )
@@ -753,19 +854,12 @@ impl SettingsWindow {
                                     .label(t(I18nKey::PurgeDeletedData, l))
                                     .small()
                                     .text_color(cx.theme().danger)
-                                    .on_click({
-                                        let app = app.clone();
-                                        move |_, _, _cx| {
-                                            let app = app.clone();
-                                            RUNTIME.spawn(async move {
-                                                match app.purge_deleted_data().await {
-                                                    Ok(n) => {
-                                                        info!("彻底清理已删除数据完成，共 {n} 条")
-                                                    }
-                                                    Err(e) => error!("彻底清理已删除数据失败: {e}"),
-                                                }
-                                            });
-                                        }
+                                    .on_click(move |_, _, cx| {
+                                        show_notification(
+                                            NotificationType::Warning,
+                                            t(I18nKey::PurgeDeletedDataUnsupported, l),
+                                            cx,
+                                        );
                                     }),
                             )
                             .into_any_element()

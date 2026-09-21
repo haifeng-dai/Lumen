@@ -614,96 +614,264 @@ where
     }
 }
 
+/// Outcome of an atomic download apply. Decision, write, conflict persist and
+/// sequence/identity advance happen in one SQLite transaction.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DownloadApplyOutcome {
+    pub applied: usize,
+    pub conflicts: usize,
+    pub skipped: usize,
+    /// DB-004 boundary: remote.version < synced_version on a non-dirty row.
+    pub version_regressions: usize,
+}
+
 /// 在单个事务中应用所有记录并推进 sequence；任一记录失败时整体回滚。
+/// Used by explicit conflict resolution ("use remote") — unconditional apply.
 pub fn apply_remote_records(
     tx: &Transaction<'_>,
     records: &[RemoteRecord],
 ) -> rusqlite::Result<usize> {
     let mut count = 0;
     for (batch_index, record) in records.iter().enumerate() {
-        let entity = record.entity_type;
-        let (table, keys, columns) = columns(entity);
-        let _object = record
-            .payload
-            .as_object()
-            .ok_or_else(|| RemoteRecordValidationError {
-                entity_type: entity,
-                batch_index,
-                reason: "invalid_payload_shape",
-                kind_encoding: None,
-                rect_presence: None,
-                field: None,
-            })?;
-
-        let canonical_payload = if entity == SyncEntityType::Annotation {
-            let (_, canonical_json) = normalize_annotation_payload(&record.payload, batch_index)?;
-            canonical_json
-        } else {
-            record.payload.clone()
-        };
-
-        let canon_obj =
-            canonical_payload
-                .as_object()
-                .ok_or_else(|| RemoteRecordValidationError {
-                    entity_type: entity,
-                    batch_index,
-                    reason: "invalid_payload_shape",
-                    kind_encoding: None,
-                    rect_presence: None,
-                    field: None,
-                })?;
-
-        for column in columns {
-            if !canon_obj.contains_key(*column) {
-                return Err(RemoteRecordValidationError {
-                    entity_type: entity,
-                    batch_index,
-                    reason: "missing_required_field",
-                    kind_encoding: None,
-                    rect_presence: None,
-                    field: Some(*column),
-                }
-                .into());
-            }
-        }
-
-        let mut names = columns.to_vec();
-        names.extend(["is_dirty", "synced_version"]);
-        let placeholders = (1..=names.len())
-            .map(|i| format!("?{i}"))
-            .collect::<Vec<_>>();
-        let values = names
-            .iter()
-            .map(|name| match *name {
-                "is_dirty" => Value::Integer(0),
-                "synced_version" => Value::Integer(record.version),
-                _ => json_value(canon_obj.get(*name)),
-            })
-            .collect::<Vec<_>>();
-        let updates = names
-            .iter()
-            .filter(|name| !keys.contains(name))
-            .map(|name| format!("`{name}` = excluded.`{name}`"))
-            .collect::<Vec<_>>();
-        let sql = format!(
-            "INSERT INTO `{table}` ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}",
-            names
-                .iter()
-                .map(|n| format!("`{n}`"))
-                .collect::<Vec<_>>()
-                .join(","),
-            placeholders.join(","),
-            keys.iter()
-                .map(|k| format!("`{k}`"))
-                .collect::<Vec<_>>()
-                .join(","),
-            updates.join(",")
-        );
-        tx.execute(&sql, rusqlite::params_from_iter(values))?;
+        apply_single_remote_record_unconditional(tx, record, batch_index)?;
         count += 1;
     }
     Ok(count)
+}
+
+fn canonical_remote_payload(
+    record: &RemoteRecord,
+    batch_index: usize,
+) -> rusqlite::Result<serde_json::Map<String, JsonValue>> {
+    let entity = record.entity_type;
+    let _object = record
+        .payload
+        .as_object()
+        .ok_or_else(|| RemoteRecordValidationError {
+            entity_type: entity,
+            batch_index,
+            reason: "invalid_payload_shape",
+            kind_encoding: None,
+            rect_presence: None,
+            field: None,
+        })?;
+    let canonical_payload = if entity == SyncEntityType::Annotation {
+        let (_, canonical_json) = normalize_annotation_payload(&record.payload, batch_index)?;
+        canonical_json
+    } else {
+        record.payload.clone()
+    };
+    canonical_payload.as_object().cloned().ok_or_else(|| {
+        RemoteRecordValidationError {
+            entity_type: entity,
+            batch_index,
+            reason: "invalid_payload_shape",
+            kind_encoding: None,
+            rect_presence: None,
+            field: None,
+        }
+        .into()
+    })
+}
+
+fn validated_column_names(
+    record: &RemoteRecord,
+    batch_index: usize,
+    canon_obj: &serde_json::Map<String, JsonValue>,
+) -> rusqlite::Result<Vec<&'static str>> {
+    let entity = record.entity_type;
+    let (_, keys, columns) = columns(entity);
+    for column in columns {
+        if !canon_obj.contains_key(*column) {
+            return Err(RemoteRecordValidationError {
+                entity_type: entity,
+                batch_index,
+                reason: "missing_required_field",
+                kind_encoding: None,
+                rect_presence: None,
+                field: Some(*column),
+            }
+            .into());
+        }
+    }
+    let mut names = columns.to_vec();
+    names.extend(["is_dirty", "synced_version"]);
+    let _ = keys;
+    Ok(names)
+}
+
+fn build_upsert_sql(table: &str, keys: &[&str], names: &[&str], dirty_guard: bool) -> String {
+    let placeholders = (1..=names.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>();
+    let updates = names
+        .iter()
+        .filter(|name| !keys.contains(name))
+        .map(|name| format!("`{name}` = excluded.`{name}`"))
+        .collect::<Vec<_>>();
+    let mut sql = format!(
+        "INSERT INTO `{table}` ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}",
+        names
+            .iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(","),
+        placeholders.join(","),
+        keys.iter()
+            .map(|k| format!("`{k}`"))
+            .collect::<Vec<_>>()
+            .join(","),
+        updates.join(",")
+    );
+    if dirty_guard {
+        sql.push_str(" WHERE `is_dirty` = 0");
+    }
+    sql
+}
+
+fn upsert_remote_record(
+    tx: &Transaction<'_>,
+    record: &RemoteRecord,
+    batch_index: usize,
+    dirty_guard: bool,
+) -> rusqlite::Result<usize> {
+    let (table, keys, _) = columns(record.entity_type);
+    let canon_obj = canonical_remote_payload(record, batch_index)?;
+    let names = validated_column_names(record, batch_index, &canon_obj)?;
+    let values: Vec<Value> = names
+        .iter()
+        .map(|name| match *name {
+            "is_dirty" => Value::Integer(0),
+            "synced_version" => Value::Integer(record.version),
+            _ => json_value(canon_obj.get(*name)),
+        })
+        .collect();
+    let sql = build_upsert_sql(table, keys, &names, dirty_guard);
+    tx.execute(&sql, rusqlite::params_from_iter(values))
+}
+
+fn apply_single_remote_record_unconditional(
+    tx: &Transaction<'_>,
+    record: &RemoteRecord,
+    batch_index: usize,
+) -> rusqlite::Result<()> {
+    upsert_remote_record(tx, record, batch_index, false)?;
+    Ok(())
+}
+
+fn key_params(key: &SyncEntityKey) -> Vec<String> {
+    match key {
+        SyncEntityKey::Id(v) => vec![v.clone()],
+        SyncEntityKey::Relation { left, right } => vec![left.clone(), right.clone()],
+    }
+}
+
+fn key_where(keys: &[&str]) -> String {
+    keys.iter()
+        .enumerate()
+        .map(|(i, k)| format!("`{k}` = ?{}", i + 1))
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
+fn sqlite_to_json(value: &Value) -> JsonValue {
+    match value {
+        Value::Null => JsonValue::Null,
+        Value::Integer(i) => JsonValue::from(*i),
+        Value::Real(f) => serde_json::Number::from_f64(*f)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null),
+        Value::Text(t) => JsonValue::String(t.clone()),
+        Value::Blob(b) => JsonValue::String(format!("<blob:{}>", b.len())),
+    }
+}
+
+fn local_state_tx(
+    tx: &Transaction<'_>,
+    entity: SyncEntityType,
+    key: &SyncEntityKey,
+) -> rusqlite::Result<Option<(i64, bool, i64)>> {
+    let (table, keys, _) = columns(entity);
+    let params = key_params(key);
+    let sql = format!(
+        "SELECT version, is_dirty, synced_version FROM `{table}` WHERE {}",
+        key_where(keys)
+    );
+    let row = tx
+        .query_row(&sql, rusqlite::params_from_iter(params.iter()), |r| {
+            Ok((
+                r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                r.get::<_, Option<i64>>(1)?.unwrap_or(0) != 0,
+                r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+            ))
+        })
+        .optional()?;
+    Ok(row)
+}
+
+fn local_row_json_tx(
+    tx: &Transaction<'_>,
+    entity: SyncEntityType,
+    key: &SyncEntityKey,
+) -> rusqlite::Result<Option<String>> {
+    let (table, keys, cols) = columns(entity);
+    let params = key_params(key);
+    let mut select_cols: Vec<&str> = cols.to_vec();
+    select_cols.extend(["is_dirty", "synced_version"]);
+    let sql = format!(
+        "SELECT {} FROM `{table}` WHERE {}",
+        select_cols
+            .iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join(","),
+        key_where(keys)
+    );
+    let mut stmt = tx.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    let mut map = serde_json::Map::new();
+    for (idx, col) in select_cols.iter().enumerate() {
+        let value: Value = row.get(idx)?;
+        let json = if *col == "is_dirty" {
+            match &value {
+                Value::Integer(i) => JsonValue::Bool(*i != 0),
+                Value::Text(t) => JsonValue::Bool(t == "1" || t.eq_ignore_ascii_case("true")),
+                other => sqlite_to_json(other),
+            }
+        } else {
+            sqlite_to_json(&value)
+        };
+        map.insert((*col).to_string(), json);
+    }
+    Ok(Some(JsonValue::Object(map).to_string()))
+}
+
+fn insert_download_conflict_tx(
+    tx: &Transaction<'_>,
+    record: &RemoteRecord,
+    key: &SyncEntityKey,
+    local_record: String,
+) -> rusqlite::Result<()> {
+    let entity_id = crate::canonical_key(key);
+    let detected_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    tx.execute(
+        "INSERT INTO sync_conflicts (entity_type,entity_id,local_record,remote_record,remote_version,detected_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(entity_type,entity_id) DO UPDATE SET local_record=excluded.local_record, remote_record=excluded.remote_record, remote_version=excluded.remote_version, detected_at=excluded.detected_at",
+        params![
+            record.entity_type.as_str(),
+            entity_id,
+            local_record,
+            serde_json::to_string(&record.payload).unwrap_or_else(|_| "null".to_string()),
+            record.version,
+            detected_at
+        ],
+    )?;
+    Ok(())
 }
 
 fn columns(
@@ -1085,12 +1253,251 @@ impl Database {
             Ok(count)
         })
     }
+
+    /// DB-002: decide, apply, persist conflicts and advance sequence/identity
+    /// in one SQLite transaction. Never overwrite a locally dirty row; store
+    /// the real local row snapshot in download conflicts; do not apply remote
+    /// versions that regress below a clean local `synced_version`.
+    pub fn apply_remote_download_atomically(
+        &self,
+        last_sequence: i64,
+        records: &[RemoteRecord],
+        identity: Option<(&str, &str)>,
+    ) -> rusqlite::Result<DownloadApplyOutcome> {
+        self.with_transaction(|tx| {
+            let mut outcome = DownloadApplyOutcome::default();
+            for (batch_index, record) in records.iter().enumerate() {
+                let entity = record.entity_type;
+                let key = record.key().ok_or_else(|| {
+                    RemoteRecordValidationError {
+                        entity_type: entity,
+                        batch_index,
+                        reason: "remote_record_missing_key",
+                        kind_encoding: None,
+                        rect_presence: None,
+                        field: None,
+                    }
+                })?;
+                match local_state_tx(tx, entity, &key)? {
+                    None => {
+                        upsert_remote_record(tx, record, batch_index, true)?;
+                        outcome.applied += 1;
+                    }
+                    Some((_, is_dirty, synced_version)) if is_dirty => {
+                        if record.version > synced_version {
+                            let local_record = local_row_json_tx(tx, entity, &key)?
+                                .ok_or(rusqlite::Error::InvalidQuery)?;
+                            insert_download_conflict_tx(tx, record, &key, local_record)?;
+                            outcome.conflicts += 1;
+                        } else if record.version < synced_version {
+                            // DB-004: server rollback vs dirty local — never treat as normal.
+                            outcome.version_regressions += 1;
+                        } else {
+                            outcome.skipped += 1;
+                        }
+                    }
+                    Some((_version, _dirty, synced_version)) => {
+                        if record.version < synced_version {
+                            // DB-004 boundary: never treat server rollback as a clean apply.
+                            outcome.version_regressions += 1;
+                        } else if record.version == synced_version {
+                            outcome.skipped += 1;
+                        } else {
+                            // Conditional apply: if the row became dirty inside this
+                            // batch window the guard fails and we persist a conflict.
+                            upsert_remote_record(tx, record, batch_index, true)?;
+                            let after = local_state_tx(tx, entity, &key)?;
+                            match after {
+                                Some((_, true, _)) => {
+                                    let local_record = local_row_json_tx(tx, entity, &key)?
+                                        .ok_or(rusqlite::Error::InvalidQuery)?;
+                                    insert_download_conflict_tx(tx, record, &key, local_record)?;
+                                    outcome.conflicts += 1;
+                                }
+                                Some((_, false, after_synced)) if after_synced == record.version => {
+                                    outcome.applied += 1;
+                                }
+                                _ => {
+                                    // Guard rejected the write for another reason; do not
+                                    // claim success. Refuse to persist a placeholder snapshot.
+                                    let local_record = local_row_json_tx(tx, entity, &key)?
+                                        .ok_or(rusqlite::Error::InvalidQuery)?;
+                                    insert_download_conflict_tx(tx, record, &key, local_record)?;
+                                    outcome.conflicts += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            tx.execute(
+                "INSERT INTO sync_meta (key,value) VALUES ('database_sync_last_sequence',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![last_sequence.to_string()],
+            )?;
+            if let Some((library_id, fingerprint)) = identity {
+                for (key, value) in [
+                    ("database_sync_library_id", library_id.to_string()),
+                    ("database_sync_remote_fingerprint", fingerprint.to_string()),
+                ] {
+                    tx.execute(
+                        "INSERT INTO sync_meta (key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        params![key, value],
+                    )?;
+                }
+            }
+            Ok(outcome)
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Database;
+
+    fn tag_record(id: &str, version: i64, name: &str) -> RemoteRecord {
+        RemoteRecord {
+            entity_type: SyncEntityType::Tag,
+            version,
+            payload: serde_json::json!({
+                "id": id,
+                "name": name,
+                "color": "#3182ce",
+                "is_deleted": false,
+                "version": version,
+                "created_at": 0,
+                "updated_at": 0
+            }),
+        }
+    }
+
+    #[test]
+    fn atomic_download_dirty_local_is_preserved_with_real_conflict_snapshot() {
+        let db = Database::new(":memory:").unwrap();
+        db.set_last_sequence(1).unwrap();
+        let tag = db.create_tag("local-name", None).unwrap();
+        db.set_synced_version(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 1)
+            .unwrap();
+        let outcome = db
+            .apply_remote_download_atomically(2, &[tag_record(&tag.id, 5, "remote-name")], None)
+            .unwrap();
+        assert_eq!(outcome.applied, 0);
+        assert_eq!(outcome.conflicts, 1);
+        assert_eq!(outcome.version_regressions, 0);
+        let state = db
+            .get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()))
+            .unwrap();
+        assert_eq!(state, Some((1, true)));
+        let conflict = db.list_sync_conflicts().unwrap().pop().unwrap();
+        assert_eq!(conflict.entity_type, "tags");
+        assert_eq!(conflict.entity_id, tag.id);
+        let local: JsonValue = serde_json::from_str(&conflict.local_record).unwrap();
+        assert_eq!(local["name"], "local-name");
+        assert_eq!(local["is_dirty"], true);
+        assert_ne!(
+            local.as_object().map(|m| m.contains_key("entity_key")),
+            Some(true)
+        );
+        let remote: JsonValue = serde_json::from_str(&conflict.remote_record).unwrap();
+        assert_eq!(remote["name"], "remote-name");
+        assert_eq!(db.get_local_sync_state().unwrap().last_sequence, 2);
+    }
+
+    #[test]
+    fn atomic_download_clean_remote_version_regression_is_not_applied() {
+        let db = Database::new(":memory:").unwrap();
+        let tag = db.create_tag("local-name", None).unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            10,
+        )
+        .unwrap();
+        let outcome = db
+            .apply_remote_download_atomically(3, &[tag_record(&tag.id, 4, "older-remote")], None)
+            .unwrap();
+        assert_eq!(outcome.applied, 0);
+        assert_eq!(outcome.conflicts, 0);
+        assert_eq!(outcome.version_regressions, 1);
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()))
+                .unwrap(),
+            Some((10, false))
+        );
+        let tags = db.get_all_tags_with_counts().unwrap();
+        let name = tags
+            .iter()
+            .find(|(t, _)| t.id == tag.id)
+            .map(|(t, _)| t.name.as_str())
+            .unwrap();
+        assert_eq!(name, "local-name");
+        assert!(db.list_sync_conflicts().unwrap().is_empty());
+        assert_eq!(db.get_local_sync_state().unwrap().last_sequence, 3);
+    }
+
+    #[test]
+    fn atomic_download_clean_remote_newer_applies_and_advances_synced_version() {
+        let db = Database::new(":memory:").unwrap();
+        let tag = db.create_tag("local-name", None).unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            2,
+        )
+        .unwrap();
+        let outcome = db
+            .apply_remote_download_atomically(4, &[tag_record(&tag.id, 7, "remote-name")], None)
+            .unwrap();
+        assert_eq!(outcome.applied, 1);
+        assert_eq!(outcome.conflicts, 0);
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()))
+                .unwrap(),
+            Some((7, false))
+        );
+        let tags = db.get_all_tags_with_counts().unwrap();
+        let name = tags
+            .iter()
+            .find(|(t, _)| t.id == tag.id)
+            .map(|(t, _)| t.name.as_str())
+            .unwrap();
+        assert_eq!(name, "remote-name");
+    }
+
+    #[test]
+    fn atomic_download_invalid_batch_rolls_back_conflicts_sequence_and_identity() {
+        let db = Database::new(":memory:").unwrap();
+        db.set_local_library_id("old").unwrap();
+        db.set_last_sequence(3).unwrap();
+        db.set_remote_fingerprint("old-fp").unwrap();
+        let tag = db.create_tag("local-name", None).unwrap();
+        db.set_synced_version(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 1)
+            .unwrap();
+        let good = tag_record(&tag.id, 5, "remote-name");
+        let bad = RemoteRecord {
+            entity_type: SyncEntityType::Tag,
+            version: 6,
+            payload: serde_json::json!({"id": "other"}),
+        };
+        let result = db.apply_remote_download_atomically(9, &[good, bad], Some(("new", "new-fp")));
+        assert!(result.is_err());
+        let state = db.get_local_sync_state().unwrap();
+        assert_eq!(state.library_id.as_deref(), Some("old"));
+        assert_eq!(state.last_sequence, 3);
+        assert_eq!(state.remote_fingerprint.as_deref(), Some("old-fp"));
+        assert!(db.list_sync_conflicts().unwrap().is_empty());
+        assert_eq!(
+            db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()))
+                .unwrap(),
+            Some((1, true))
+        );
+    }
+
     #[test]
     fn invalid_record_rolls_back_sequence() {
         let db = Database::new(":memory:").unwrap();

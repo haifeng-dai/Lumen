@@ -218,6 +218,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "첨부 파일 동기화",
         I18nKey::FileSyncLastRun => "마지막 파일 동기화",
         I18nKey::FileSyncSummaryUnavailable => "파일 동기화 요약을 사용할 수 없음",
+        I18nKey::FileSyncNeedsAttention => {
+            "파일 동기화 처리 필요: 충돌, 분기 또는 복구 불가 객체가 있습니다"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "파일 동기화 대기 중: 데이터베이스 확인 또는 온디맨드 다운로드 미완료"
+        }
         I18nKey::SyncSkippedBusy => "동기화가 진행 중이어서 이번 요청이 시작되지 않았습니다",
         I18nKey::SyncUploaded => "업로드",
         I18nKey::SyncDownloaded => "다운로드",
@@ -235,6 +241,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "데이터베이스 ID가 일치하지 않습니다",
         I18nKey::DatabaseSyncConflict => "데이터베이스 동기화 충돌",
         I18nKey::DatabaseSyncPartialFailure => "데이터베이스 동기화 일부 실패",
+        I18nKey::DatabaseSyncPendingCount => "동기화 대기 중인 새 변경",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "동기화 중 새 로컬 변경이 발생하여 아직 대기 중입니다"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "원격 데이터 버전이 로컬 동기화 기준선보다 낮습니다(서버 롤백 가능성). 로컬 데이터는 덮어쓰지 않았습니다. 서버 백업을 확인하세요"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "버전 역행",
         I18nKey::DatabaseSyncError => "데이터베이스 동기화 오류",
         I18nKey::DatabaseSyncUploaded => "업로드됨",
         I18nKey::DatabaseSyncDownloaded => "다운로드됨",
@@ -410,6 +424,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "삭제된 데이터 정리",
         I18nKey::PurgeDeletedData => "삭제된 데이터 완전 정리 (로컬 + 원격)",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "삭제된 데이터의 안전한 정리는 현재 지원되지 않습니다. 기기 워터마크 및 보존 기간 프로토콜이 없어 계속하면 오프라인 기기의 증분 동기화가 손상됩니다"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "원격 파일 저장소 초기화",

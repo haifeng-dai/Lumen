@@ -216,6 +216,8 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "同步附件",
         I18nKey::FileSyncLastRun => "最近檔案同步",
         I18nKey::FileSyncSummaryUnavailable => "檔案同步摘要不可用",
+        I18nKey::FileSyncNeedsAttention => "檔案同步需要處理：存在衝突、分歧或無法復原的物件",
+        I18nKey::FileSyncWaitingStatus => "檔案同步等待中：資料庫確認或隨選下載未完成",
         I18nKey::SyncSkippedBusy => "已有同步進行中，本次請求未啟動",
         I18nKey::SyncUploaded => "上傳",
         I18nKey::SyncDownloaded => "下載",
@@ -231,6 +233,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "資料庫身分不匹配",
         I18nKey::DatabaseSyncConflict => "資料庫同步存在衝突",
         I18nKey::DatabaseSyncPartialFailure => "資料庫同步部分失敗",
+        I18nKey::DatabaseSyncPendingCount => "待同步的新修改",
+        I18nKey::DatabaseSyncPendingLocalChanges => "同步期間產生新的本機修改，仍待同步",
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "偵測到遠端資料版本低於本機同步基線（可能伺服器回檔），本機資料未被覆寫，請核對伺服器備份"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "版本回退",
         I18nKey::DatabaseSyncError => "資料庫同步錯誤",
         I18nKey::DatabaseSyncUploaded => "已上傳",
         I18nKey::DatabaseSyncDownloaded => "已下載",
@@ -400,6 +408,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "清空雲端檔案",
         I18nKey::PurgeSyncedDeletions => "清理已刪除資料",
         I18nKey::PurgeDeletedData => "徹底清理已刪除資料（本機+遠端）",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "目前不支援安全清理已刪除資料：缺少裝置水位與保留期協定，繼續執行會破壞離線裝置增量同步"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "初始化遠端檔案儲存",

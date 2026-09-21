@@ -84,6 +84,30 @@ pub enum UploadObjectResult {
     AlreadyExists,
 }
 
+/// FILE-001: CAS 条件更新结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateObjectResult {
+    /// 远端已接受更新，携带新的远端版本
+    Updated(String),
+    /// expected_remote_version 与当前远端不一致（412 / 等价语义）
+    VersionConflict,
+    /// 后端无法安全条件更新；禁止先查后写
+    Unsupported,
+}
+
+/// FILE-003: CAS 条件删除结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeleteObjectResult {
+    /// 条件删除成功
+    Deleted,
+    /// 对象已不存在（身份/清单已确认前提下的 404）
+    AlreadyAbsent,
+    /// expected_remote_version 与当前远端不一致（412）
+    VersionConflict,
+    /// 后端无法安全条件删除
+    Unsupported,
+}
+
 /// 严格校验对象键是否为规范的 objects/v1/<canonical UUID>
 pub fn validate_canonical_object_key(object_key: &str) -> Result<String> {
     let prefix = "objects/v1/";
@@ -128,6 +152,17 @@ pub trait AttachmentBackend: Send + Sync {
         local_path: PathBuf,
     ) -> Pin<Box<dyn Future<Output = Result<UploadObjectResult>> + Send>>;
 
+    /// FILE-001: 条件更新已存在对象（CAS）。
+    ///
+    /// 输入当前观察到的 `expected_remote_version`；仅当远端仍为该版本时写入。
+    /// 不支持安全条件更新的后端必须返回 `Unsupported`，禁止先查后写。
+    fn update_object_if_version(
+        &self,
+        object_key: String,
+        local_path: PathBuf,
+        expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<UpdateObjectResult>> + Send>>;
+
     /// 下载对象到临时文件路径（404 返回 None，成功返回远端版本）
     fn download_object(
         &self,
@@ -135,9 +170,15 @@ pub trait AttachmentBackend: Send + Sync {
         temporary_path: PathBuf,
     ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>>;
 
-    /// 删除对象（404 视为成功已删除）
-    fn delete_object(&self, object_key: String)
-    -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+    /// FILE-003: 条件删除对象。
+    ///
+    /// 仅当远端版本仍等于 `expected_remote_version` 时删除。
+    /// 404 在清单已确认前提下返回 `AlreadyAbsent`；412 → `VersionConflict`。
+    fn delete_object(
+        &self,
+        object_key: String,
+        expected_remote_version: String,
+    ) -> Pin<Box<dyn Future<Output = Result<DeleteObjectResult>> + Send>>;
 
     /// 返回该 backend 实例的不可逆配置指纹（SHA-256 十六进制字符串）。
     ///

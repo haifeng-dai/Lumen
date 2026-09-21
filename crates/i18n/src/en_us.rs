@@ -218,6 +218,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "Sync Attachments",
         I18nKey::FileSyncLastRun => "Last file sync",
         I18nKey::FileSyncSummaryUnavailable => "File sync summary unavailable",
+        I18nKey::FileSyncNeedsAttention => {
+            "File sync needs attention: conflicts, divergence, or unrecoverable objects"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "File sync waiting: database confirmation or on-demand download incomplete"
+        }
         I18nKey::SyncSkippedBusy => "A sync is already running; this request was not started",
         I18nKey::SyncUploaded => "Uploaded",
         I18nKey::SyncDownloaded => "Downloaded",
@@ -235,6 +241,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "Database library identity mismatch",
         I18nKey::DatabaseSyncConflict => "Database sync has conflicts",
         I18nKey::DatabaseSyncPartialFailure => "Database sync partially failed",
+        I18nKey::DatabaseSyncPendingCount => "New changes pending",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "New local changes occurred during sync and are still pending"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "Remote data versions are below the local sync baseline (possible server rollback); local data was not overwritten — verify the server backup"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "Version regressions",
         I18nKey::DatabaseSyncError => "Database sync error",
         I18nKey::DatabaseSyncUploaded => "Uploaded",
         I18nKey::DatabaseSyncDownloaded => "Downloaded",
@@ -271,6 +285,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Purge Deleted Data",
         I18nKey::PurgeDeletedData => "Purge Deleted Data (Local + Remote)",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "Safe purge of deleted data is currently unsupported: device watermark and retention protocol are missing; continuing would break incremental sync for offline devices"
+        }
 
         // PDF Viewer
         I18nKey::PdfViewerSettings => "PDF Viewer Settings",

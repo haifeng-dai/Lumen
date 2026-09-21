@@ -220,6 +220,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::SyncAttachments => "Anhänge synchronisieren",
         I18nKey::FileSyncLastRun => "Letzte Dateisynchronisierung",
         I18nKey::FileSyncSummaryUnavailable => "Dateisync-Zusammenfassung nicht verfügbar",
+        I18nKey::FileSyncNeedsAttention => {
+            "Dateisync erfordert Aufmerksamkeit: Konflikte, Abweichungen oder unwiederherstellbare Objekte"
+        }
+        I18nKey::FileSyncWaitingStatus => {
+            "Dateisync wartet: Datenbankbestätigung oder On-Demand-Download unvollständig"
+        }
         I18nKey::SyncSkippedBusy => "Synchronisierung läuft bereits, Anfrage nicht gestartet",
         I18nKey::SyncUploaded => "Hochgeladen",
         I18nKey::SyncDownloaded => "Heruntergeladen",
@@ -239,6 +245,14 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::DatabaseSyncIdentityMismatch => "Datenbankidentität stimmt nicht überein",
         I18nKey::DatabaseSyncConflict => "Konflikte bei der Datenbanksynchronisierung",
         I18nKey::DatabaseSyncPartialFailure => "Datenbanksynchronisierung teilweise fehlgeschlagen",
+        I18nKey::DatabaseSyncPendingCount => "Ausstehende neue Änderungen",
+        I18nKey::DatabaseSyncPendingLocalChanges => {
+            "Neue lokale Änderungen während der Synchronisierung warten noch"
+        }
+        I18nKey::DatabaseSyncRemoteVersionRegression => {
+            "Remote-Datenversionen liegen unter der lokalen Sync-Baseline (möglicher Server-Rollback); lokale Daten wurden nicht überschrieben — bitte Server-Backup prüfen"
+        }
+        I18nKey::DatabaseSyncVersionRegressionsCount => "Versionsrückfälle",
         I18nKey::DatabaseSyncError => "Fehler bei der Datenbanksynchronisierung",
         I18nKey::DatabaseSyncUploaded => "Hochgeladen",
         I18nKey::DatabaseSyncDownloaded => "Heruntergeladen",
@@ -421,6 +435,9 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ClearCloudFiles => "Clear Cloud Files",
         I18nKey::PurgeSyncedDeletions => "Gelöschte Daten bereinigen",
         I18nKey::PurgeDeletedData => "Gelöschte Daten vollständig bereinigen (lokal + remote)",
+        I18nKey::PurgeDeletedDataUnsupported => {
+            "Sicheres Bereinigen gelöschter Daten wird derzeit nicht unterstützt: Geräte-Wasserstand und Aufbewahrungsprotokoll fehlen; Fortfahren würde die inkrementelle Synchronisierung offline Geräte zerstören"
+        }
 
         // File Library Sync Dialog
         I18nKey::FileLibraryInitRequiredTitle => "Remote-Dateispeicher initialisieren",

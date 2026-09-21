@@ -399,13 +399,18 @@ impl PdfReaderView {
                 .rounded_md()
                 .p_3()
                 .cursor_default()
+                .occlude()
                 .id(outer_id)
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, _, _| {
+                    cx.listener(|this, _, _, cx| {
                         this.overlay_button_clicked = true;
+                        cx.stop_propagation();
                     }),
                 )
+                .on_click(|_, _, cx| {
+                    cx.stop_propagation();
+                })
                 .child(
                     v_flex()
                         .gap_2()
@@ -425,12 +430,10 @@ impl PdfReaderView {
                                             cx.notify();
                                         }))
                                         .child(Icon::new(IconName::Check).size(px(16.0)))
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.save_note_and_close(cx);
-                                            }),
-                                        ),
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.overlay_button_clicked = true;
+                                            this.save_note_and_close(cx);
+                                        })),
                                 )
                                 .child(
                                     div()
@@ -442,12 +445,10 @@ impl PdfReaderView {
                                             cx.notify();
                                         }))
                                         .child(Icon::new(IconName::Close).size(px(16.0)))
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.close_note_editor(cx);
-                                            }),
-                                        ),
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.overlay_button_clicked = true;
+                                            this.close_note_editor(cx);
+                                        })),
                                 ),
                         ),
                 )
@@ -456,19 +457,26 @@ impl PdfReaderView {
     }
 
     fn save_note_and_close(&mut self, cx: &mut Context<Self>) {
+        // 状态已被外部清空时不要静默丢弃：直接返回，避免误写空备注
+        let annotation_id = match self.annotation_state.note_editor.as_ref() {
+            Some(editor) => editor.annotation_id.clone(),
+            None => {
+                self.note_input_state = None;
+                self.note_input_sub = None;
+                cx.notify();
+                return;
+            }
+        };
         let text = self
             .note_input_state
             .as_ref()
             .map(|input| input.read(cx).value().to_string())
             .unwrap_or_default();
 
-        if let Some(editor) = &self.annotation_state.note_editor {
-            let id = editor.annotation_id.clone();
-            self.update_and_save(&id, |ann| {
-                ann.note = Some(text);
-                ann.updated_at = chrono::Utc::now().timestamp();
-            });
-        }
+        self.update_and_save(&annotation_id, |ann| {
+            ann.note = Some(text);
+            ann.updated_at = chrono::Utc::now().timestamp();
+        });
 
         self.note_input_state = None;
         self.note_input_sub = None;

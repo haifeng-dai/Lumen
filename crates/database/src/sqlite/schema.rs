@@ -521,8 +521,14 @@ mod tests {
         let tag = db.create_tag("legacy", Some("#123456".into())).unwrap();
         let tombstone = db.create_tag("removed", None).unwrap();
         db.delete_tag(&tombstone.id).unwrap();
-        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 11)
-            .unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            11,
+        )
+        .unwrap();
         db.with_conn(|conn| {
             conn.execute(
                 "DELETE FROM sync_meta WHERE key = 'database_sync_state_migrated_v1'",
@@ -558,8 +564,14 @@ mod tests {
         );
 
         db.migrate_legacy_sync_state(false).unwrap();
-        db.confirm_upload(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id.clone()), 12)
-            .unwrap();
+        db.confirm_uploaded_snapshot(
+            SyncEntityType::Tag,
+            &SyncEntityKey::Id(tag.id.clone()),
+            1,
+            0,
+            12,
+        )
+        .unwrap();
         db.migrate_legacy_sync_state(false).unwrap();
         assert_eq!(
             db.get_download_state(SyncEntityType::Tag, &SyncEntityKey::Id(tag.id))

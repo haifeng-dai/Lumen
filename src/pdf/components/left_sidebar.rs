@@ -1052,6 +1052,7 @@ impl PdfReaderView {
                 let ann_page_range = ann.range.as_ref().map(|r| r.end_page_or());
                 let ann_id_left = ann.id.clone();
                 let ann_id = ann.id.clone();
+                let ann_id_edit = ann.id.clone();
                 let start_char = ann.range.as_ref().map(|r| r.start_char);
                 let end_char = ann.range.as_ref().map(|r| r.end_char);
                 let range_start_page = ann.range.as_ref().map(|r| r.start_page);
@@ -1165,6 +1166,16 @@ impl PdfReaderView {
                                 v_flex()
                                     .w_full()
                                     .mt_1()
+                                    .id(gpui::SharedString::from(format!(
+                                        "sidebar-note-edit-{ann_id_edit}"
+                                    )))
+                                    // 阻止事件冒泡到列表项/父容器，避免点击输入框时被关闭
+                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
+                                    .on_click(|_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
                                     .child(gpui_component::input::Textarea::new(input).w_full())
                                     .child(
                                         h_flex()
@@ -1182,7 +1193,7 @@ impl PdfReaderView {
                                                     .child(
                                                         Icon::new(IconName::Check).size(px(16.0)),
                                                     )
-                                                    .on_mouse_down(
+                                                    .on_mouse_up(
                                                         gpui::MouseButton::Left,
                                                         cx.listener(move |this, _, _, cx| {
                                                             this.save_sidebar_note(cx);
@@ -1199,7 +1210,7 @@ impl PdfReaderView {
                                                     .child(
                                                         Icon::new(IconName::Close).size(px(16.0)),
                                                     )
-                                                    .on_mouse_down(
+                                                    .on_mouse_up(
                                                         gpui::MouseButton::Left,
                                                         cx.listener(move |this, _, _, cx| {
                                                             this.cancel_sidebar_note(cx);
@@ -1229,20 +1240,26 @@ impl PdfReaderView {
         v_flex().size_full().child(
             div()
                 .size_full()
-                .overflow_y_scrollbar()
-                .on_mouse_down(
-                    gpui::MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.annotation_state.toolbar = None;
-                        this.annotation_toolbar_menu = None;
-                        this.annotation_context_menu = None;
+                .id("annotation-list-root")
+                // 在侧栏内编辑备注时不因 mouse_down 冒泡误关输入框
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.annotation_state.toolbar = None;
+                    this.annotation_toolbar_menu = None;
+                    this.annotation_context_menu = None;
+                    // 侧栏备注编辑中不清空 editing_note_sidebar_*
+                    if this.editing_note_sidebar_id.is_none() {
                         this.annotation_state.note_editor = None;
                         this.note_input_state = None;
                         this.note_input_sub = None;
-                        cx.notify();
-                    }),
-                )
-                .children(list_items),
+                    }
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .size_full()
+                        .overflow_y_scrollbar()
+                        .children(list_items),
+                ),
         )
     }
 
