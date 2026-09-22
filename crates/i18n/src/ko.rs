@@ -72,6 +72,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportLibrarySuccess => "내보내기 완료: 문헌 {}, 첨부 {} (건너뜀 {}), 주석 {}",
         I18nKey::ExportLibraryFailed => "라이브러리 내보내기 실패: {}",
         I18nKey::ExportLibrarySelectFolder => "내보내기 폴더 선택",
+        I18nKey::ImportLibrary => "문서 라이브러리 가져오기",
+        I18nKey::ImportLibrarySuccess => {
+            "가져오기 완료: 문헌 ID 재사용 {} / 충돌로 신규 {}; 첨부 {} (복사 시 이름 변경 {}, 템플릿 {}); 저자 재사용 {}; 태그 재사용 {}. 중복은 중복 검사를 실행하세요."
+        }
+        I18nKey::ImportLibraryFailed => "라이브러리 가져오기 실패: {}",
+        I18nKey::ImportLibrarySelectPackage => "내보내기 패키지 또는 상위 폴더 선택",
         I18nKey::SelectNewFile => "새 파일 선택",
         I18nKey::Confirm => "확인",
         I18nKey::LoadingMetadata => "데이터 가져오는 중...",

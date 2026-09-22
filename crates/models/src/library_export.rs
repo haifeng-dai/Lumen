@@ -361,3 +361,102 @@ pub struct LibraryExportReport {
     pub dest_dir: String,
     pub counts: ExportCounts,
 }
+
+/// 导入计数（合并进当前库；不做清库恢复）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImportCounts {
+    pub literatures_reused_id: usize,
+    pub literatures_new_id: usize,
+    pub authors_reused: usize,
+    pub authors_inserted: usize,
+    pub publications_reused: usize,
+    pub publications_inserted: usize,
+    pub folders_reused: usize,
+    pub folders_inserted: usize,
+    pub tags_reused: usize,
+    pub tags_inserted: usize,
+    pub feeds_inserted: usize,
+    pub feed_items_inserted: usize,
+    pub attachments_inserted: usize,
+    pub attachments_renamed_on_copy: usize,
+    pub attachments_template_renamed: usize,
+    pub attachments_template_rename_failed: usize,
+    pub attachments_file_missing: usize,
+    pub annotations_inserted: usize,
+    pub annotations_skipped: usize,
+    pub literature_notes_inserted: usize,
+    pub citations_inserted: usize,
+    pub citations_skipped: usize,
+    pub relations_skipped: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryImportReport {
+    pub package_root: String,
+    pub counts: ImportCounts,
+    /// 本次导入（含沿用 id 与新建 id）的 literature id
+    pub imported_literature_ids: Vec<String>,
+}
+
+/// database 导入：附件 id → 已拷贝到本地的绝对路径
+#[derive(Debug, Clone, Default)]
+pub struct LibraryImportAttachmentPaths {
+    pub paths: std::collections::HashMap<String, String>,
+}
+
+/// 词表查找结果（services 规划导入时使用）
+#[derive(Debug, Clone, Default)]
+pub struct ImportLookupMaps {
+    /// (first_name, last_name) → author_id
+    pub authors_by_name: std::collections::HashMap<(String, String), String>,
+    /// publication name → id
+    pub publications_by_name: std::collections::HashMap<String, String>,
+    /// folder name → id
+    pub folders_by_name: std::collections::HashMap<String, String>,
+    /// tag name → id
+    pub tags_by_name: std::collections::HashMap<String, String>,
+    pub existing_literature_ids: std::collections::HashSet<String>,
+    pub existing_attachment_ids: std::collections::HashSet<String>,
+    pub existing_annotation_ids: std::collections::HashSet<String>,
+    pub existing_note_ids: std::collections::HashSet<String>,
+    pub existing_feed_ids: std::collections::HashSet<String>,
+    pub existing_feed_item_ids: std::collections::HashSet<String>,
+}
+
+/// 已完成外键重写的待写入数据（database 只做 INSERT）
+#[derive(Debug, Clone, Default)]
+pub struct PreparedLibraryImport {
+    pub publications: Vec<PublicationExportRow>,
+    pub authors: Vec<AuthorExportRow>,
+    pub folders: Vec<FolderExportRow>,
+    pub tags: Vec<TagExportRow>,
+    pub feeds: Vec<FeedExportRow>,
+    pub feed_items: Vec<FeedItemExportRow>,
+    pub literatures: Vec<LiteratureExportRow>,
+    pub literature_authors: Vec<LiteratureAuthorExportRow>,
+    pub literature_folders: Vec<LiteratureFolderExportRow>,
+    pub literature_tags: Vec<LiteratureTagExportRow>,
+    pub attachments: Vec<PreparedAttachmentInsert>,
+    pub annotations: Vec<AnnotationExportRow>,
+    pub literature_notes: Vec<LiteratureNoteExportRow>,
+    pub citations: Vec<CitationExportRow>,
+    pub imported_literature_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedAttachmentInsert {
+    /// 包内原始附件 id（用于拷贝时对齐 export_relative_path）
+    pub source_package_id: String,
+    pub id: String,
+    pub literature_id: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub mime_type: Option<String>,
+    pub etag: Option<String>,
+    pub hash: Option<String>,
+    pub is_main: bool,
+    pub version: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+}

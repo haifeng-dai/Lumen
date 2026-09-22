@@ -74,6 +74,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         }
         I18nKey::ExportLibraryFailed => "Не удалось экспортировать библиотеку: {}",
         I18nKey::ExportLibrarySelectFolder => "Выберите папку экспорта",
+        I18nKey::ImportLibrary => "Импортировать библиотеку",
+        I18nKey::ImportLibrarySuccess => {
+            "Импорт завершён: id литературы переиспользовано {}, новых после конфликта {}; вложений {} ({} переименовано при копировании, {} по шаблону); авторов переиспользовано {}; меток {}. При необходимости запустите поиск дубликатов."
+        }
+        I18nKey::ImportLibraryFailed => "Не удалось импортировать библиотеку: {}",
+        I18nKey::ImportLibrarySelectPackage => "Выберите пакет экспорта или родительскую папку",
         I18nKey::SelectNewFile => "Выбрать новый файл",
         I18nKey::Confirm => "ОК",
         I18nKey::LoadingMetadata => "Получение метаданных...",

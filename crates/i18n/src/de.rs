@@ -76,6 +76,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         }
         I18nKey::ExportLibraryFailed => "Bibliotheksexport fehlgeschlagen: {}",
         I18nKey::ExportLibrarySelectFolder => "Exportordner wählen",
+        I18nKey::ImportLibrary => "Bibliothek importieren",
+        I18nKey::ImportLibrarySuccess => {
+            "Import abgeschlossen: {} Literatur-IDs wiederverwendet, {} neu nach Konflikt; {} Anhänge ({} beim Kopieren umbenannt, {} per Vorlage); {} Autoren wiederverwendet; {} Tags. Bei Bedarf Duplikate suchen."
+        }
+        I18nKey::ImportLibraryFailed => "Bibliotheksimport fehlgeschlagen: {}",
+        I18nKey::ImportLibrarySelectPackage => "Exportpaket oder übergeordneten Ordner wählen",
         I18nKey::SelectNewFile => "Neue Datei wählen",
         I18nKey::Confirm => "OK",
         I18nKey::LoadingMetadata => "Metadaten werden abgerufen...",

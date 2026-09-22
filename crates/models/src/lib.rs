@@ -36,10 +36,12 @@ pub use folder::{Folder, FolderType};
 pub use library_export::{
     AnnotationExportRaw, AnnotationExportRow, AttachmentExportRaw, AttachmentExportRow,
     AuthorExportAuthor, AuthorExportRow, CitationExportRow, ExportCounts, ExportManifest,
-    FeedExportRow, FeedItemExportRow, FolderExportRow, LIBRARY_EXPORT_FORMAT,
-    LIBRARY_EXPORT_FORMAT_VERSION, LibraryExportBundle, LibraryExportReport, LibraryExportSnapshot,
+    FeedExportRow, FeedItemExportRow, FolderExportRow, ImportCounts, ImportLookupMaps,
+    LIBRARY_EXPORT_FORMAT, LIBRARY_EXPORT_FORMAT_VERSION, LibraryExportBundle, LibraryExportReport,
+    LibraryExportSnapshot, LibraryImportAttachmentPaths, LibraryImportReport,
     LiteratureAuthorExportRow, LiteratureExportRow, LiteratureFolderExportRow,
-    LiteratureNoteExportRow, LiteratureTagExportRow, PublicationExportRow, TagExportRow,
+    LiteratureNoteExportRow, LiteratureTagExportRow, PreparedAttachmentInsert,
+    PreparedLibraryImport, PublicationExportRow, TagExportRow,
 };
 pub use literature::{Literature, LiteratureType, ReadingStatus};
 pub use literature_note::LiteratureNote;

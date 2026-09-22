@@ -72,6 +72,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportLibrarySuccess => "書き出し完了：文献 {}、添付 {}（スキップ {}）、注釈 {}",
         I18nKey::ExportLibraryFailed => "ライブラリの書き出しに失敗しました：{}",
         I18nKey::ExportLibrarySelectFolder => "書き出し先フォルダを選択",
+        I18nKey::ImportLibrary => "文献ライブラリをインポート",
+        I18nKey::ImportLibrarySuccess => {
+            "インポート完了：文献 ID 再利用 {} / 衝突で新規 {}、添付 {}（コピー時改名 {}、テンプレート {}）、著者再利用 {}、タグ再利用 {}。重複は「重複検出」で確認してください。"
+        }
+        I18nKey::ImportLibraryFailed => "ライブラリのインポートに失敗しました：{}",
+        I18nKey::ImportLibrarySelectPackage => "書き出しパッケージまたは親フォルダを選択",
         I18nKey::SelectNewFile => "新しいファイルを選択",
         I18nKey::Confirm => "OK",
         I18nKey::LoadingMetadata => "リモートソースからメタデータを取得中...",

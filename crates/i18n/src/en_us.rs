@@ -70,6 +70,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         }
         I18nKey::ExportLibraryFailed => "Failed to export library: {}",
         I18nKey::ExportLibrarySelectFolder => "Select export parent folder",
+        I18nKey::ImportLibrary => "Import Library",
+        I18nKey::ImportLibrarySuccess => {
+            "Import finished: {} literature id(s) reused, {} new after conflict; {} attachments ({} renamed on copy, {} by template); {} authors reused; {} tags reused. Run duplicate detection if needed."
+        }
+        I18nKey::ImportLibraryFailed => "Failed to import library: {}",
+        I18nKey::ImportLibrarySelectPackage => "Select an export package or its parent folder",
         I18nKey::SelectNewFile => "Select New File",
         I18nKey::Confirm => "OK",
         I18nKey::LoadingMetadata => "Fetching metadata from remote source...",

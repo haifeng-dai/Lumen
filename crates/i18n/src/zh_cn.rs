@@ -73,6 +73,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportLibrarySuccess => "导出成功：文献 {}，附件 {}（跳过 {}），批注 {}",
         I18nKey::ExportLibraryFailed => "导出文献库失败：{}",
         I18nKey::ExportLibrarySelectFolder => "选择导出父目录",
+        I18nKey::ImportLibrary => "导入文献库",
+        I18nKey::ImportLibrarySuccess => {
+            "导入完成：文献沿用 id {} / 冲突新建 {}；附件 {}（拷贝改名 {}，模板重命名 {}）；作者复用 {}；标签复用 {}。重复项请自行「查重」。"
+        }
+        I18nKey::ImportLibraryFailed => "导入文献库失败：{}",
+        I18nKey::ImportLibrarySelectPackage => "选择导出包或其父目录",
         I18nKey::SelectNewFile => "选择新文件",
         I18nKey::Confirm => "确定",
         I18nKey::LoadingMetadata => "正在从远程来源获取元数据...",

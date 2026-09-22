@@ -72,6 +72,12 @@ pub fn translate(key: I18nKey) -> &'static str {
         I18nKey::ExportLibrarySuccess => "匯出成功：文獻 {}，附件 {}（跳過 {}），註記 {}",
         I18nKey::ExportLibraryFailed => "匯出文獻庫失敗：{}",
         I18nKey::ExportLibrarySelectFolder => "選擇匯出資料夾",
+        I18nKey::ImportLibrary => "匯入文獻庫",
+        I18nKey::ImportLibrarySuccess => {
+            "匯入完成：文獻沿用 id {} / 衝突新建 {}；附件 {}（拷貝改名 {}，模板重命名 {}）；作者複用 {}；標籤複用 {}。重複項請自行「查重」。"
+        }
+        I18nKey::ImportLibraryFailed => "匯入文獻庫失敗：{}",
+        I18nKey::ImportLibrarySelectPackage => "選擇匯出包或其父資料夾",
         I18nKey::SelectNewFile => "選擇新檔案",
         I18nKey::Confirm => "確定",
         I18nKey::LoadingMetadata => "正在從遠端來源獲取元數據...",

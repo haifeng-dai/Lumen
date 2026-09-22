@@ -30,6 +30,23 @@ pub fn normalize_document_id(raw: &str, exported_att_ids: &HashSet<String>) -> O
     None
 }
 
+/// 阅读器加载批注时使用的 document_id 候选键。
+///
+/// 运行时键为 `{literature_id}::{attachment_id}`（见 `PdfWindowController::open_pdf`）；
+/// 历史/导入数据可能只存 attachment id 或 literature id。
+pub fn annotation_document_id_keys(document_id: &str) -> Vec<String> {
+    let mut keys = vec![document_id.to_string()];
+    if let Some((lit, att)) = document_id.split_once("::") {
+        if !att.is_empty() {
+            keys.push(att.to_string());
+        }
+        if !lit.is_empty() {
+            keys.push(lit.to_string());
+        }
+    }
+    keys
+}
+
 fn resolve_attachment_source(
     raw_path: &str,
     file_name: &str,

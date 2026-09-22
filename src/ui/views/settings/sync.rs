@@ -714,6 +714,90 @@ impl SettingsWindow {
                                     }),
                             )
                             .child(
+                                Button::new("import-library")
+                                    .label(t(I18nKey::ImportLibrary, l))
+                                    .small()
+                                    .on_click({
+                                        let app = app.clone();
+                                        let language = l;
+                                        move |_, window, cx| {
+                                            let app = app.clone();
+                                            let handle = window.window_handle();
+                                            let prompt =
+                                                t(I18nKey::ImportLibrarySelectPackage, language);
+                                            let receiver = cx.prompt_for_paths(PathPromptOptions {
+                                                files: false,
+                                                directories: true,
+                                                multiple: false,
+                                                prompt: Some(prompt.into()),
+                                            });
+                                            cx.spawn(move |async_cx: &mut AsyncApp| {
+                                                let app = app.clone();
+                                                let mut async_cx = async_cx.clone();
+                                                async move {
+                                                    let selected = match receiver.await {
+                                                        Ok(Ok(Some(paths))) if !paths.is_empty() => {
+                                                            Some(paths[0].clone())
+                                                        }
+                                                        _ => None,
+                                                    };
+                                                    let Some(src) = selected else {
+                                                        return;
+                                                    };
+                                                    let result = app.import_library_from(&src);
+                                                    let _ = async_cx.update_window(handle, |_, _, cx| {
+                                                        match result {
+                                                            Ok(report) => {
+                                                                let c = &report.counts;
+                                                                let summary = tf(
+                                                                    I18nKey::ImportLibrarySuccess,
+                                                                    language,
+                                                                    &[
+                                                                        &c.literatures_reused_id
+                                                                            .to_string(),
+                                                                        &c.literatures_new_id
+                                                                            .to_string(),
+                                                                        &c.attachments_inserted
+                                                                            .to_string(),
+                                                                        &c.attachments_renamed_on_copy
+                                                                            .to_string(),
+                                                                        &c.attachments_template_renamed
+                                                                            .to_string(),
+                                                                        &c.authors_reused
+                                                                            .to_string(),
+                                                                        &c.tags_reused
+                                                                            .to_string(),
+                                                                    ],
+                                                                );
+                                                                show_notification(
+                                                                    NotificationType::Success,
+                                                                    format!(
+                                                                        "{summary}\n{}",
+                                                                        report.package_root
+                                                                    ),
+                                                                    cx,
+                                                                );
+                                                            }
+                                                            Err(e) => {
+                                                                show_notification(
+                                                                    NotificationType::Error,
+                                                                    tf(
+                                                                        I18nKey::ImportLibraryFailed,
+                                                                        language,
+                                                                        &[&e.to_string()],
+                                                                    ),
+                                                                    cx,
+                                                                );
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            })
+                                            .detach();
+                                        }
+                                    }),
+                            )
+                            .child(
                                 Button::new("clear-local-db")
                                     .label(t(I18nKey::ClearLocalDb, l))
                                     .small()

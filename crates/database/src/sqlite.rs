@@ -11,6 +11,7 @@ mod feed;
 mod feed_item;
 mod folder;
 mod library_export;
+mod library_import;
 mod literature;
 mod literature_notes;
 mod publication;
